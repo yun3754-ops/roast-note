@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#3a2418">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="로스팅 노트">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>홈로스팅 노트</title>
+<style>
+:root{--bg:#f6f1ea;--card:#fffdf9;--ink:#2b211b;--mute:#7a6a5d;--line:#e2d7c8;--accent:#8a4b24;--accent2:#c9894f;--ok:#2f7d4f;--warn:#b7791f;--bad:#b3392e;--on:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1511;--card:#251d17;--ink:#f1e8de;--mute:#a8998a;--line:#3a2e25;--accent:#d98e57;--accent2:#a8683a;--ok:#5fbf86;--warn:#e0a94a;--bad:#e5736a;--on:#1b1511;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1511;--card:#251d17;--ink:#f1e8de;--mute:#a8998a;--line:#3a2e25;--accent:#d98e57;--accent2:#a8683a;--ok:#5fbf86;--warn:#e0a94a;--bad:#e5736a;--on:#1b1511;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+header{padding:14px 16px 0;max-width:900px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px}
+header p{margin:0;color:var(--mute);font-size:13px}
+nav{display:flex;gap:6px;overflow-x:auto;padding:12px 16px;max-width:900px;margin:0 auto}
+nav button{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:999px;font:inherit;cursor:pointer}
+nav button.on{background:var(--accent);border-color:var(--accent);color:var(--on)}
+main{max-width:900px;margin:0 auto;padding:0 16px 40px}
+section{display:none}section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card h2{font-size:16px;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--mute);margin-bottom:3px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+button.pri,button.sec{padding:9px 14px;border-radius:8px;border:1px solid var(--accent);font:inherit;cursor:pointer}
+button.pri{background:var(--accent);color:var(--on)}
+button.sec{background:transparent;color:var(--accent)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
+.kv b{color:var(--mute);font-weight:500}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line);color:var(--mute)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.timer{font-size:44px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.alert{padding:10px 12px;border-radius:8px;background:rgba(183,121,31,.15);border:1px solid var(--warn);margin:8px 0;font-size:14px}
+canvas{width:100%;height:240px;display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+ul{margin:6px 0;padding-left:20px}
+.small{font-size:12px;color:var(--mute)}
+[hidden]{display:none!important}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;max-width:520px;width:100%;display:grid;gap:10px}
+.box textarea{font:12px/1.4 ui-monospace,monospace}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:520px;margin:auto;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;z-index:60}
+.evbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:10px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>☕ 홈로스팅 노트</h1>
+  <p>홈로스팅·바리스타 지식 베이스 기반 · 수치는 출발점이므로 자신의 로그로 보정하세요</p>
+</header>
+<nav id="tabs"></nav>
+<main>
+
+<!-- 1. 프로파일 추천 -->
+<section id="t-plan">
+  <div class="card">
+    <h2>생두 조건 입력</h2>
+    <div class="grid">
+      <div><label>가공방식</label><select id="p-process"><option>워시드</option><option>내추럴</option><option>허니</option><option>무산소</option></select></div>
+      <div><label>품종·특수 분류</label><select id="p-kind"><option value="">일반 (밀레니오·카투아이·버번 등)</option><option value="gesha">게이샤</option><option value="yemen">예멘</option><option value="excelsa">엑셀사</option><option value="robusta">로부스타·CxR</option></select></div>
+      <div><label>용도</label><select id="p-purpose"><option value="filter">필터(핸드드립)</option><option value="espresso">에스프레소 블렌드 베이스</option></select></div>
+      <div><label>밀도 (g/ml)</label><input id="p-density" type="number" step="0.01" placeholder="예: 0.72"></div>
+      <div><label>수분 (%)</label><input id="p-moist" type="number" step="0.1" placeholder="예: 11"></div>
+      <div><label>수확연도</label><select id="p-crop"><option value="new">뉴크롭</option><option value="old">올드크롭</option></select></div>
+      <div><label>투입량 (g)</label><input id="p-weight" type="number" value="300"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label style="margin:0"><input type="checkbox" id="p-cold" style="width:auto"> 겨울·바람 부는 날</label>
+      <label style="margin:0"><input type="checkbox" id="p-second" style="width:auto"> 연속 배치(2회차 이후)</label>
+      <label style="margin:0"><input type="checkbox" id="p-expensive" style="width:auto"> 고가 생두</label>
+    </div>
+    <p class="small">간이 밀도: 메스실린더에 생두 100g을 붓고 부피(ml)를 재어 g ÷ ml. <span id="p-dens-help"></span></p>
+    <button class="pri" onclick="app.plan()">시작 프로파일 추천</button>
+  </div>
+  <div id="plan-out"></div>
+</section>
+
+<!-- 2. 로스팅 세션 -->
+<section id="t-roast">
+  <div class="card">
+    <div class="row">
+      <div style="flex:1;min-width:180px"><label>내 생두</label><select id="r-beansel" onchange="app.selBean()"></select></div>
+      <div style="flex:1;min-width:180px"><label>목표 프로파일</label><select id="r-profile" onchange="app.showSuggest()"></select></div>
+      <div><label>투입량 (g)</label><input id="r-weight" type="number" value="300" style="width:100px"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label>투입 온도 (온도계 눈금 ℃)</label><input id="r-charge" type="number" step="5" style="width:150px" oninput="this.dataset.auto=''"></div>
+      <label style="margin:0 0 8px"><input type="checkbox" id="r-cold" style="width:auto" onchange="app.showSuggest()"> 겨울·바람</label>
+      <label style="margin:0 0 8px"><input type="checkbox" id="r-second" style="width:auto" onchange="app.showSuggest()"> 연속 배치</label>
+    </div>
+    <div class="alert" id="r-suggest" style="margin-top:0"></div>
+    <div class="timer" id="r-timer">0:00</div>
+    <div class="small" id="r-phase">대기 중</div>
+    <div class="small" id="r-beanhint"></div>
+    <div id="r-alert"></div>
+    <div class="row">
+      <div><label>현재 온도 (℃)</label><input id="r-temp" type="number" step="0.1" style="width:110px"></div>
+      <button class="sec" id="b-log" onclick="app.logTemp()">온도 기록</button>
+      <button class="pri" id="b-start" onclick="app.start()">▶ 투입(시작)</button>
+    </div>
+    <div class="evbtns" id="r-events"></div>
+    <div class="small">이벤트 버튼은 누른 시각과 온도 입력란의 값을 함께 기록합니다. 온도는 30초~1분마다 기록하면 RoR 곡선이 그려집니다.</div>
+  </div>
+  <div class="card"><h2>온도·RoR 곡선</h2><canvas id="chart" width="860" height="240"></canvas></div>
+  <div class="card" id="r-result" style="display:none">
+    <h2>배출 결과</h2>
+    <div class="row"><div><label>배출 무게 (g)</label><input id="r-out" type="number" style="width:110px"></div>
+      <button class="pri" onclick="app.finish()">결과 분석</button></div>
+    <div id="r-analysis"></div>
+    <div class="grid" style="margin-top:10px">
+      <div><label>생두 (국가/농장/품종/가공)</label><input id="r-bean"></div>
+      <div><label>실내 온도/날씨</label><input id="r-env"></div>
+    </div>
+    <label style="margin-top:8px">화력 변경·메모</label><textarea id="r-note" rows="2" placeholder="예: 3:40 강→중, 7:50 중→약"></textarea>
+    <div class="row" style="margin-top:8px"><button class="pri" onclick="app.saveBatch()">배치 저장</button><button class="sec" onclick="app.reset()">초기화</button></div>
+  </div>
+</section>
+
+<!-- 내 생두 -->
+<section id="t-beans">
+  <div class="card">
+    <h2>내 생두</h2>
+    <p class="small">구매한 생두의 <code>bean.json</code>을 불러옵니다. Claude가 등록한 파일은 저장소 <code>beans/</code>에 있으며, 웹 서버로 열면 자동으로 불러옵니다. <code>index.html</code>을 파일로 직접 열었다면 아래에서 파일을 선택하세요.</p>
+    <div class="row">
+      <input id="bn-file" type="file" accept=".json,application/json" multiple style="width:auto" onchange="app.importBeans(this.files)">
+      <button class="sec" onclick="app.loadRepoBeans(true)">저장소에서 불러오기</button>
+    </div>
+  </div>
+  <div id="beans-out"></div>
+</section>
+
+<!-- 3. 배치 기록 -->
+<section id="t-log">
+  <div class="row" style="margin-bottom:10px">
+    <button class="sec" onclick="app.exportCsv()">CSV 내보내기</button>
+    <button class="sec" onclick="app.exportJson()">JSON 내보내기</button>
+  </div>
+  <div id="log-out"></div>
+</section>
+
+<!-- 4. 진단 -->
+<section id="t-diag">
+  <div class="card">
+    <h2>증상으로 원인 찾기</h2>
+    <label>컵에서 느껴지는 증상</label>
+    <select id="d-sym" onchange="app.diag()"></select>
+  </div>
+  <div id="diag-out"></div>
+  <div class="card"><h2>로스팅 결점 요약</h2><table id="defect-table"></table></div>
+</section>
+
+<!-- 5. 추출·숙성 -->
+<section id="t-brew">
+  <div class="card">
+    <h2>추출 레시피</h2>
+    <div class="grid">
+      <div><label>방식</label><select id="b-type" onchange="app.brew()"><option value="drip">핸드드립</option><option value="esp">에스프레소</option></select></div>
+      <div><label>배전도</label><select id="b-roast" onchange="app.brew()"></select></div>
+      <div><label>원두량 (g)</label><input id="b-dose" type="number" value="15" oninput="app.brew()"></div>
+      <div id="b-ratio-wrap"><label>비율 1:<span id="b-ratio-v">16</span></label><input id="b-ratio" type="range" min="15" max="17" step="0.5" value="16" oninput="app.brew()"></div>
+    </div>
+    <div id="brew-out" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <h2>추출 수율(EY) 계산</h2>
+    <div class="grid">
+      <div><label>TDS (%)</label><input id="e-tds" type="number" step="0.01" oninput="app.ey()"></div>
+      <div><label>추출량 (g)</label><input id="e-out" type="number" oninput="app.ey()"></div>
+      <div><label>원두량 (g)</label><input id="e-dose" type="number" oninput="app.ey()"></div>
+    </div>
+    <div id="ey-out" style="margin-top:8px"></div>
+  </div>
+  <div class="card">
+    <h2>숙성(디개싱) 일정</h2>
+    <div class="grid">
+      <div><label>로스팅 날짜</label><input id="g-date" type="date" onchange="app.degas()"></div>
+      <div><label>용도</label><select id="g-use" onchange="app.degas()"></select></div>
+    </div>
+    <div id="degas-out" style="margin-top:8px"></div>
+  </div>
+  <div class="card">
+    <h2>커핑 계산</h2>
+    <div class="row"><div><label>컵 수</label><input id="c-n" type="number" value="3" style="width:90px" oninput="app.cup()"></div><div id="cup-out"></div></div>
+    <p class="small">SCA 간이 방식: 원두 8.25g : 물 150ml, 로스팅 후 8~24시간, 물 약 93℃, 4분 후 크러스트 브레이크, 약 70℃부터 슬러핑.</p>
+  </div>
+</section>
+
+</main>
+<div id="dlg" class="ov" hidden><div class="box">
+  <div id="dlg-msg"></div>
+  <textarea id="dlg-text" rows="8" readonly hidden></textarea>
+  <div class="row" id="dlg-btns"></div>
+</div></div>
+<div id="toast" role="status" hidden></div>
+<script>
+"use strict";
+/* ============ 지식 베이스 데이터 ============ */
+const mmss = s => { s = Math.max(0, Math.round(s)); return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0"); };
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $ = id => document.getElementById(id);
+
+// 4장: 생두 특성별 시작 프로파일 (시간은 초, 감량은 %)
+const PROFILES = [
+  {id:"hd-washed", name:"고밀도 워시드", power:"강", yellow:[270,300], c1:[510,570], dev:[75,105], dtr:[15,18], loss:[12,14], note:"초반 열량이 부족하면 풋내가 납니다. (에티오피아·케냐·과테말라 고지대)"},
+  {id:"gesha", name:"워시드 게이샤", power:"중강", yellow:[270,300], c1:[510,540], dev:[60,90], loss:[11.5,13], note:"향 보존 최우선, 과열 금지. 과열 시 향 손실이 가장 큽니다."},
+  {id:"natural", name:"내추럴", power:"중강", yellow:[270,300], c1:[510,570], dev:[75,105], loss:[12.5,14.5], note:"당분이 많아 표면이 빨리 탑니다. 중반 이후 화력을 완만하게, 1차 크랙이 격렬할 수 있습니다."},
+  {id:"honey", name:"허니", power:"중강", yellow:[270,300], c1:[510,570], dev:[75,105], loss:[13,15], note:"레드·블랙 허니는 내추럴처럼 다룹니다."},
+  {id:"anaerobic", name:"무산소 내추럴·워시드", power:"중", yellow:[290,310], c1:[510,540], dev:[60,80], loss:[12,13.5], note:"짧은 디벨롭으로 발효향을 정리합니다. 과열 시 쉽게 텁텁해집니다."},
+  {id:"yemen", name:"예멘", power:"중", yellow:[300,330], c1:[540,600], dev:[90,120], loss:[13.5,15], note:"핸드픽 필수, 건조 구간을 넉넉히."},
+  {id:"excelsa", name:"엑셀사", power:"중강", yellow:[290,310], c1:[540,600], dev:[90,120], loss:[14,16], note:"대형 원두라 속까지 익히는 것이 핵심입니다."},
+  {id:"esp-base", name:"에스프레소 블렌드 베이스", power:"중강", yellow:[270,300], c1:[540,600], dev:[120,150], dtr:[20,23], loss:[15,17], note:"바디·단맛 중심 (브라질·인도 등)."},
+  {id:"robusta", name:"로부스타·CxR", power:"강", yellow:[270,300], c1:[540,600], dev:[120,150], loss:[16,18], note:"블렌드의 10~20% 수준으로 사용합니다."}
+];
+PROFILES.forEach(p => { if(!p.dtr) p.dtr = [Math.round(100*p.dev[0]/(p.c1[0]+p.dev[0])), Math.round(100*p.dev[1]/(p.c1[1]+p.dev[1]))]; });
+
+// 2.3장: 배전도
+const LEVELS = [
+  {key:"light", name:"라이트(약)", lo:11, hi:13, use:"필터, 게이샤·에티오피아", temp:"93~96℃", dtr:[15,20]},
+  {key:"medlight", name:"중약", lo:13, hi:14.5, use:"필터 전반", temp:"93~96℃", dtr:[15,20]},
+  {key:"medium", name:"미디엄(중)", lo:14.5, hi:16, use:"필터·에스프레소 겸용", temp:"90~93℃", dtr:[18,22]},
+  {key:"meddark", name:"중강", lo:16, hi:17.5, use:"에스프레소, 우유 음료", temp:"85~90℃", dtr:[20,25]},
+  {key:"dark", name:"다크(강)", lo:17.5, hi:30, use:"강배전 블렌드", temp:"85~90℃", dtr:[20,25]}
+];
+const levelOf = loss => LEVELS.find(l => loss < l.hi) || LEVELS[LEVELS.length-1];
+
+// 6.4 / 6.5 / 2.4 진단
+const SYMPTOMS = [
+  {k:"신맛 날카로움 / 짠맛 / 여운 짧음", type:"추출", cause:"추출 부족", fix:["분쇄를 가늘게","물 온도를 올림","비율을 늘림(물 증가)","추출 시간 연장"], check:"추출을 바꿔도 풀·곡물 맛이 남으면 로스팅 언더디벨롭입니다."},
+  {k:"쓴맛 / 떫음 / 건조한 뒷맛", type:"추출", cause:"추출 과다", fix:["분쇄를 굵게","물 온도를 낮춤","비율을 줄임"], check:"굵게·짧게 해도 탄 맛·연기 맛이 남으면 로스팅 과열(스코칭·티핑·플릭)입니다."},
+  {k:"밍밍함 / 물 같음", type:"추출", cause:"농도 부족", fix:["원두량을 늘림(비율을 1:15 쪽으로)"], check:"향도 약하고 종이 맛이면 베이킹 또는 원두 노화를 의심하세요."},
+  {k:"무겁고 탁함", type:"추출", cause:"농도 과다·미분", fix:["비율을 늘림","미분 체거름"], check:""},
+  {k:"신맛과 쓴맛이 동시에", type:"추출", cause:"채널링·불균일 추출", fix:["분쇄 균일도 점검","푸어링 안정화","에스프레소는 퍽 준비 점검"], check:"추출이 정상인데도 지속되면 로스팅 불균일(크기 편차·건조 부족)을 확인하세요."},
+  {k:"풀·땅콩·곡물 맛", type:"로스팅", cause:"언더디벨롭 (1차 크랙 후 너무 빨리 배출 / 건조 부족)", fix:["디벨롭 시간 연장","건조 구간 확보","초반 열량 보강"], check:"추출 변수를 바꿔도 남을 때 로스팅 문제로 판단합니다."},
+  {k:"밍밍 / 빵·종이·골판지 맛", type:"로스팅", cause:"베이킹 (RoR 정체·크래시, 시간 과다)", fix:["중반 화력 유지","1차 크랙 후 RoR 크래시 방지","총 시간 단축"], check:"원두가 오래되었다면 노화일 수 있습니다."},
+  {k:"탄내 / 연기 / 재 맛", type:"로스팅", cause:"스코칭·티핑·플릭 (과열)", fix:["투입 온도를 낮춤","초반 화력 조절","1차 크랙 30~60초 전 화력을 미리 낮춤"], check:"원두 표면 반점·끝이 검은 점이 있으면 스코칭·티핑입니다."},
+  {k:"여러 결점이 섞인 복합 맛", type:"로스팅", cause:"불균일 (크기 편차, 건조 부족, 과량 투입)", fix:["핸드픽","투입량 조절","건조 구간 연장"], check:""},
+  {k:"과한 발효향 / 식초 맛", type:"생두·가공", cause:"가공 결점 또는 무산소·내추럴의 과열·긴 디벨롭", fix:["디벨롭 짧게(DTR 낮춤)","라이트~중약으로 낮춤"], check:"가공 결점은 로스팅으로 해결되지 않습니다."}
+];
+const DEFECTS = [
+  ["언더디벨롭","1차 크랙 후 너무 빨리 배출, 건조 부족","풀·땅콩·날카로운 신맛","디벨롭 연장, 건조 구간 확보"],
+  ["베이킹","RoR 정체·크래시, 시간 과다","밍밍, 빵·종이 맛","중반 화력 유지, 크래시 방지"],
+  ["스코칭","투입 온도·초반 화력 과다, 드럼 회전 느림","탄내, 표면 반점","투입 온도 낮춤, 초반 화력 조절"],
+  ["티핑","원두 끝부분 과열","탄 맛, 끝이 검은 점","1차 크랙 전후 화력 과다 줄임"],
+  ["불균일","크기 편차, 건조 부족, 과량 투입","복합 결점맛","핸드픽, 투입량 조절, 건조 연장"]
+];
+const DEGAS = {
+  "drip-light":{label:"핸드드립(라이트)", min:5, max:10, note:"라이트일수록 길게. 게이샤·에티오피아는 1주 이후 향이 열리는 경우가 많습니다."},
+  "drip-medium":{label:"핸드드립(미디엄)", min:3, max:7, note:""},
+  "espresso":{label:"에스프레소", min:7, max:14, note:"가스가 많으면 추출이 불안정하고 쓴맛이 납니다."},
+  "cupping":{label:"커핑 평가", min:0.33, max:1, note:"로스팅 후 8~24시간 (SCA 기준)"}
+};
+
+/* ============ 앱 ============ */
+const app = {
+  // 세션 상태
+  s: null,
+  timerId: null,
+  EVENTS: [
+    {k:"tp", label:"터닝포인트"}, {k:"yellow", label:"옐로우"},
+    {k:"c1s", label:"1차 크랙 시작"}, {k:"c1e", label:"1차 크랙 종료"},
+    {k:"c2", label:"2차 크랙"}, {k:"drop", label:"배출", drop:true}
+  ],
+
+  init(){
+    const tabs = [["plan","프로파일 추천"],["beans","내 생두"],["roast","로스팅 세션"],["log","배치 기록"],["diag","진단"],["brew","추출·숙성"]];
+    $("tabs").innerHTML = tabs.map(([k,l]) => `<button data-t="${k}" onclick="app.tab('${k}')">${l}</button>`).join("");
+    $("r-profile").innerHTML = PROFILES.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    $("r-events").innerHTML = this.EVENTS.map(e => `<button class="${e.drop?"pri":"sec"}" id="ev-${e.k}" onclick="app.mark('${e.k}')" disabled>${e.label}</button>`).join("");
+    $("d-sym").innerHTML = '<option value="">선택하세요</option>' + SYMPTOMS.map((s,i) => `<option value="${i}">${s.k}</option>`).join("");
+    $("defect-table").innerHTML = "<tr><th>결점</th><th>원인</th><th>맛</th><th>대응</th></tr>" + DEFECTS.map(d => "<tr>"+d.map(c=>`<td>${c}</td>`).join("")+"</tr>").join("");
+    $("b-roast").innerHTML = LEVELS.map(l => `<option value="${l.key}" ${l.key==="medlight"?"selected":""}>${l.name}</option>`).join("");
+    $("g-use").innerHTML = Object.entries(DEGAS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join("");
+    $("g-date").value = new Date().toISOString().slice(0,10);
+    $("p-dens-help").textContent = "대략 0.72 이상 고밀도, 0.65 이하 저밀도.";
+    this.brew(); this.ey(); this.degas(); this.cup(); this.renderLog();
+    this.loadBeans(); this.renderBeans(); this.loadRepoBeans(false); this.showSuggest();
+    this.tab(location.hash.slice(1) || "plan");
+    window.addEventListener("resize", () => this.draw());
+  },
+  tab(k){
+    if(!$("t-"+k)) k = "plan";
+    document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === "t-"+k));
+    document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.t === k));
+    if(k === "roast") this.draw();
+    if(k === "log") this.renderLog();
+    if(k === "beans") this.renderBeans();
+  },
+
+  /* ---------- 1. 프로파일 추천 ---------- */
+  pick(kind, purpose, process){
+    if(kind === "gesha") return "gesha";
+    if(kind === "yemen") return "yemen";
+    if(kind === "excelsa") return "excelsa";
+    if(kind === "robusta") return "robusta";
+    if(purpose === "espresso") return "esp-base";
+    return {"워시드":"hd-washed","내추럴":"natural","허니":"honey","무산소":"anaerobic"}[process];
+  },
+  plan(){
+    const process = $("p-process").value, kind = $("p-kind").value, purpose = $("p-purpose").value;
+    const density = parseFloat($("p-density").value), moist = parseFloat($("p-moist").value);
+    const w = parseFloat($("p-weight").value) || 0;
+    const p = PROFILES.find(x => x.id === this.pick(kind, purpose, process));
+    const tips = this.tips({density, moist, crop: $("p-crop").value, cold: $("p-cold").checked, second: $("p-second").checked,
+      expensive: $("p-expensive").checked, kind, process});
+    const rng = a => `${mmss(a[0])} ~ ${mmss(a[1])}`;
+    const outW = w ? `<tr><td>목표 배출 무게</td><td>${(w*(1-p.loss[1]/100)).toFixed(0)} ~ ${(w*(1-p.loss[0]/100)).toFixed(0)} g (투입 ${w}g 기준)</td></tr>` : "";
+    $("plan-out").innerHTML = `<div class="card"><h2>${esc(p.name)} <span class="tag">초반 화력 ${p.power}</span></h2>
+      <table>
+        <tr><td>옐로우 목표</td><td>${rng(p.yellow)}</td></tr>
+        <tr><td>1차 크랙 목표</td><td>${rng(p.c1)}</td></tr>
+        <tr><td>디벨롭 시간</td><td>${rng(p.dev)} (DTR 약 ${p.dtr[0]}~${p.dtr[1]}%)</td></tr>
+        <tr><td>목표 감량률</td><td>${p.loss[0]}~${p.loss[1]}% (${levelOf((p.loss[0]+p.loss[1])/2).name} 부근)</td></tr>
+        ${outW}
+      </table>
+      <p>${esc(p.note)}</p>
+      ${tips.length ? "<b>이번 배치 보정</b><ul>"+tips.map(t=>`<li>${esc(t)}</li>`).join("")+"</ul>" : ""}
+      <ul class="small"><li>총 시간은 보통 9~13분 범위(8분 미만 속이 덜 익음, 15분 초과 향이 납작해짐).</li><li>1차 크랙 30~60초 전에 화력을 한 단계 낮추세요.</li><li>시간 목표는 소형 드럼 기준 대략값입니다. 자기 장비의 기준점(같은 생두 3회 이상)으로 보정하세요.</li></ul>
+      <button class="pri" onclick="app.toRoast('${p.id}', ${w})">이 프로파일로 로스팅 시작</button></div>`;
+  },
+  toRoast(id, w){
+    $("r-beansel").value = "";
+    $("r-profile").value = id; if(w) $("r-weight").value = w;
+    this.tab("roast");
+  },
+  // 생두 조건 → 로스팅 보정 팁 (지식 베이스 1장·3.3장·4.1장)
+  tips(o){
+    const t = [];
+    if(o.density != null && !isNaN(o.density)){
+      if(o.density >= 0.72) t.push("고밀도: 열을 늦게 받으므로 초반 화력을 강하게, 열량을 충분히 주세요.");
+      else if(o.density <= 0.65) t.push("저밀도: 과열·스코칭에 주의하고 초반 화력을 낮추세요.");
+    }
+    if(o.moist != null && !isNaN(o.moist)){
+      if(o.moist > 12) t.push("수분 12% 초과: 건조 구간이 길어지므로 초반 열량을 더 주세요.");
+      else if(o.moist < 10) t.push("수분 10% 미만: 빨리 익을 수 있으니 화력을 약간 낮추세요.");
+    }
+    if(o.crop === "old") t.push("올드크롭: 수분이 줄어 빨리 익고 향이 약합니다. 화력을 약간 낮추세요.");
+    if(o.cold) t.push("겨울·바람: 같은 화력에서도 열량이 떨어집니다. 투입 온도를 기준으로 화력을 보정하세요.");
+    if(o.second) t.push("연속 배치: 드럼 축열이 늘어나므로 초반 화력을 약간 낮추세요. 채프는 매 배치 후 제거하세요.");
+    if(o.expensive) t.push("고가 생두: 첫 배치는 가장 보수적(라이트 쪽)으로 볶고, 3~5일 숙성 후 커핑으로 판단하세요. 가능하면 배치량을 줄여 2~3회로 나누어 배전도를 달리 테스트하고, 같은 가공의 저가 생두로 연습 배치를 먼저 해보세요.");
+    if(o.kind === "yemen") t.push("예멘: 크기 편차와 결점두가 많으므로 사전 핸드픽이 필수입니다.");
+    if(o.process === "무산소" && o.kind !== "yemen") t.push("무산소: 발효향이 과해지기 쉬우므로 라이트~중약으로 디벨롭을 짧게 가져가세요.");
+    return t;
+  },
+
+  /* ---------- 투입 온도 제안 ---------- */
+  // 직전 배치의 옐로우 시각을 목표와 비교해 다음 투입 온도를 제안한다. 10초 이내 오차는 유지하고 한 번에 최대 ±10℃만 움직인다.
+  // 1차 크랙만 어긋나면 투입 온도가 아니라 메일라드 구간 화력을 조정하도록 안내한다.
+  suggestFrom(last, p){
+    if(!last || last.charge == null) return null;
+    const ev = last.events || {}, y = ev.yellow ? ev.yellow.t : null, c1 = ev.c1s ? ev.c1s.t : null, hints = [];
+    const yr = `${mmss(p.yellow[0])}~${mmss(p.yellow[1])}`;
+    let d = 0, why;
+    if(y == null) why = "옐로우 시각이 기록되지 않아 같은 투입 온도를 유지합니다.";
+    else if(y < p.yellow[0] - 10){ const g = Math.round(p.yellow[0] - y); d = g > 30 ? -10 : -5; why = `옐로우 ${mmss(y)}가 목표(${yr})보다 ${g}초 빨랐습니다. 건조가 너무 빠르면 스코칭·건조 부족 위험이 있습니다.`; }
+    else if(y > p.yellow[1] + 10){ const g = Math.round(y - p.yellow[1]); d = g > 30 ? 10 : 5; why = `옐로우 ${mmss(y)}가 목표(${yr})보다 ${g}초 늦었습니다. 초반 열량이 부족하면 풋내가 납니다.`; }
+    else why = `옐로우 ${mmss(y)}가 목표 범위(${yr}) 안입니다. 같은 투입 온도를 유지하세요.`;
+    if(y != null && d === 0 && c1 != null){
+      if(c1 < p.c1[0] - 20) hints.push(`1차 크랙 ${mmss(c1)}이 목표보다 빠릅니다. 투입 온도는 두고 메일라드 구간 화력을 낮춰 보세요.`);
+      else if(c1 > p.c1[1] + 20) hints.push(`1차 크랙 ${mmss(c1)}이 목표보다 늦습니다. 투입 온도는 두고 메일라드 구간 화력을 올려 보세요.`);
+    }
+    if(!ev.tp) hints.push("터닝포인트(시각·눈금)도 기록하면 비교가 정확해집니다.");
+    return {base: last.charge, d, next: last.charge + d, why, hints};
+  },
+  chargeRows(profileId, bean){
+    const rows = bean ? this.allBatches(bean) : this.load().filter(b => b.profileId === profileId).map(b => this.toBeanBatch(b));
+    return rows.filter(b => b.charge != null);
+  },
+  beanSuggest(bean){
+    const rows = this.chargeRows(bean.profileId, bean), sg = this.suggestFrom(rows[rows.length - 1], this.profileOf(bean));
+    return sg ? `<div class="small">다음 투입 온도 제안 <b>${sg.next}℃</b> (직전 ${sg.base}℃${sg.d ? ", " + (sg.d > 0 ? "+" : "") + sg.d + "℃" : ", 유지"})</div>` : "";
+  },
+  showSuggest(){
+    const box = $("r-suggest"), bean = this.beans[$("r-beansel").value] || null, pid = bean ? bean.profileId : $("r-profile").value;
+    const p = PROFILES.find(x => x.id === pid), rows = this.chargeRows(pid, bean), sg = this.suggestFrom(rows[rows.length - 1], p);
+    const ctx = [];
+    if($("r-cold").checked) ctx.push("겨울·바람: 같은 눈금에서도 열량이 떨어집니다. 옐로우가 늦으면 투입 온도로 보정하세요.");
+    if($("r-second").checked) ctx.push("연속 배치: 드럼 축열이 늘어납니다. 초반 화력을 약간 낮추고 옐로우 시각을 확인하세요.");
+    box.innerHTML = (sg
+      ? `<b>다음 투입 온도 제안 ${sg.next}℃</b> (직전 ${sg.base}℃${sg.d ? ", " + (sg.d > 0 ? "+" : "") + sg.d + "℃" : ", 유지"})<br>${esc(sg.why)}`
+      : "기준 배치가 없습니다. 예열 후 안정된 눈금으로 투입하고 투입 온도·옐로우·1차 크랙을 기록하면 다음 배치부터 제안합니다. 같은 생두로 3회 이상 볶아 기준점을 만드세요.")
+      + (sg ? sg.hints.map(h => "<br>" + esc(h)).join("") : "") + ctx.map(c => "<br>" + esc(c)).join("");
+    const ch = $("r-charge");
+    if(!ch.value || ch.dataset.auto === "1"){ ch.value = sg ? sg.next : ""; ch.dataset.auto = sg ? "1" : ""; }
+  },
+
+  /* ---------- 2. 로스팅 세션 ---------- */
+  profile(){ return PROFILES.find(p => p.id === $("r-profile").value); },
+  elapsed(){ return this.s ? (Date.now() - this.s.t0) / 1000 : 0; },
+  async start(){
+    if(this.s && !this.s.done && !(await this.ask("진행 중인 세션을 버리고 새로 시작할까요?"))) return;
+    const temp = parseFloat($("r-temp").value), charge = parseFloat($("r-charge").value);
+    this.s = {t0: Date.now(), pts: [], ev: {}, done: false, weight: parseFloat($("r-weight").value) || 0, profile: $("r-profile").value,
+      charge: isNaN(charge) ? null : charge, cold: $("r-cold").checked, second: $("r-second").checked};
+    if(this.s.charge != null) this.s.pts.push({t: 0, T: this.s.charge});
+    else if(!isNaN(temp)) this.s.pts.push({t: 0, T: temp});
+    this.EVENTS.forEach(e => $("ev-"+e.k).disabled = false);
+    $("b-start").disabled = true; $("r-result").style.display = "none"; $("r-analysis").innerHTML = "";
+    clearInterval(this.timerId); this.timerId = setInterval(() => this.tick(), 250); this.tick();
+  },
+  tick(){
+    if(!this.s || this.s.done) return;
+    const t = this.elapsed(), p = this.profile(), ev = this.s.ev;
+    $("r-timer").textContent = mmss(t);
+    let phase = "건조 구간", al = "";
+    if(ev.yellow) phase = "메일라드 구간";
+    if(ev.c1s) phase = "디벨롭 구간";
+    $("r-phase").textContent = phase + (ev.c1s ? ` · 디벨롭 ${mmss(t-ev.c1s.t)} · DTR ${(100*(t-ev.c1s.t)/t).toFixed(1)}%` : "");
+    if(!ev.c1s){
+      const warnFrom = p.c1[0]-60, warnTo = p.c1[1]-30;
+      if(t >= warnFrom && t <= warnTo + 30) al = "⚠ 1차 크랙 30~60초 전 구간입니다. 화력을 한 단계 낮춰 크랙 에너지를 흡수시키세요 (플릭 방지).";
+      else if(!ev.yellow && t > p.yellow[1] + 30) al = "옐로우 목표 시간을 지났습니다. 초반 열량이 부족하지 않은지 확인하세요.";
+    } else {
+      const dev = t - ev.c1s.t;
+      if(dev >= p.dev[1] - 10 && !ev.drop) al = `디벨롭 ${mmss(dev)} — 목표(${mmss(p.dev[0])}~${mmss(p.dev[1])}) 상한에 도달했습니다. 배출을 고려하세요.`;
+    }
+    if(t > 15*60 && !ev.drop) al = "총 시간 15분 초과: 향이 납작해질 수 있습니다.";
+    $("r-alert").innerHTML = al ? `<div class="alert">${al}</div>` : "";
+    if(Math.floor(t*4) % 4 === 0) this.draw();
+  },
+  logTemp(){
+    if(!this.s || this.s.done) return this.notify("먼저 투입(시작) 버튼을 눌러 주세요.");
+    const T = parseFloat($("r-temp").value);
+    if(isNaN(T)) return this.notify("온도를 입력해 주세요.");
+    this.s.pts.push({t: this.elapsed(), T}); this.draw();
+  },
+  mark(k){
+    if(!this.s || this.s.done || this.s.ev[k]) return;
+    const T = parseFloat($("r-temp").value), t = this.elapsed();
+    this.s.ev[k] = {t, T: isNaN(T) ? null : T};
+    if(!isNaN(T)) this.s.pts.push({t, T});
+    $("ev-"+k).disabled = true;
+    $("ev-"+k).textContent = this.EVENTS.find(e => e.k === k).label + " " + mmss(t);
+    if(k === "drop"){
+      this.s.done = true; clearInterval(this.timerId); $("r-timer").textContent = mmss(t);
+      this.EVENTS.forEach(e => $("ev-"+e.k).disabled = true);
+      $("r-result").style.display = "block"; $("b-start").disabled = false;
+      $("r-alert").innerHTML = '<div class="alert">배출 완료. 4분 이내 실온까지 빠르게 냉각하고, 배출 무게를 입력해 결과를 분석하세요.</div>';
+    }
+    this.draw();
+  },
+  // RoR(℃/분): 인접 기록점 사이 변화율을 30초 이상 간격으로 계산
+  ror(){
+    const pts = this.s ? this.s.pts.slice().sort((a,b) => a.t-b.t) : [], out = [];
+    for(let i = 1; i < pts.length; i++){
+      let j = i - 1;
+      while(j > 0 && pts[i].t - pts[j].t < 25) j--;
+      const dt = pts[i].t - pts[j].t;
+      if(dt >= 10) out.push({t: pts[i].t, R: (pts[i].T - pts[j].T) / dt * 60});
+    }
+    return out;
+  },
+  analyze(){
+    const s = this.s, ev = s.ev, p = PROFILES.find(x => x.id === s.profile);
+    const total = ev.drop.t, out = [];
+    const add = (cls, msg) => out.push(`<li class="${cls}">${msg}</li>`);
+    const res = {total, lossPct: null};
+    if(ev.yellow) res.dry = ev.yellow.t / total * 100;
+    if(ev.c1s){
+      res.dev = total - ev.c1s.t; res.dtr = res.dev / total * 100;
+      if(ev.yellow) res.mai = (ev.c1s.t - ev.yellow.t) / total * 100;
+    }
+    const range = (v, r) => v < r[0] ? -1 : v > r[1] ? 1 : 0;
+    if(total < 480) add("bad", `총 시간 ${mmss(total)}: 8분 미만 — 속이 덜 익을 수 있습니다.`);
+    else if(total > 900) add("bad", `총 시간 ${mmss(total)}: 15분 초과 — 향이 납작해질 수 있습니다.`);
+    else if(total < 540 || total > 780) add("warn", `총 시간 ${mmss(total)}: 일반 범위(9~13분)를 벗어났습니다.`);
+    else add("ok", `총 시간 ${mmss(total)}: 일반 범위(9~13분)입니다.`);
+    if(ev.yellow){
+      const r = range(ev.yellow.t, p.yellow);
+      add(r ? "warn" : "ok", `옐로우 ${mmss(ev.yellow.t)} (목표 ${mmss(p.yellow[0])}~${mmss(p.yellow[1])})` + (r<0 ? " — 빠름: 건조 부족 위험" : r>0 ? " — 느림: 초반 열량 보강 검토" : ""));
+    }
+    if(ev.c1s){
+      const r = range(ev.c1s.t, p.c1);
+      add(r ? "warn" : "ok", `1차 크랙 ${mmss(ev.c1s.t)} (목표 ${mmss(p.c1[0])}~${mmss(p.c1[1])})`);
+      const d = range(res.dev, p.dev);
+      add(d ? "warn" : "ok", `디벨롭 ${mmss(res.dev)} (목표 ${mmss(p.dev[0])}~${mmss(p.dev[1])})` + (d<0 ? " — 짧음: 언더디벨롭 위험(풀·땅콩 맛)" : d>0 ? " — 김: 단맛 감소·베이킹/과열 위험" : ""));
+      const q = range(res.dtr, p.dtr);
+      add(q ? "warn" : "ok", `DTR ${res.dtr.toFixed(1)}% (목표 ${p.dtr[0]}~${p.dtr[1]}%)`);
+      if(res.dry != null) add("", `단계 비율: 건조 ${res.dry.toFixed(0)}% / 메일라드 ${res.mai.toFixed(0)}% / 디벨롭 ${res.dtr.toFixed(0)}% (일반: 40~50 / 25~35 / 15~25)`);
+    } else add("warn", "1차 크랙 시작을 기록하지 않아 DTR을 계산할 수 없습니다.");
+    // RoR 진단
+    const R = this.ror();
+    if(ev.c1s && R.length){
+      const before = R.filter(r => r.t <= ev.c1s.t && r.t >= ev.c1s.t - 90), after = R.filter(r => r.t > ev.c1s.t);
+      if(before.length && after.length){
+        const b = before[before.length-1].R, aMax = Math.max(...after.map(r => r.R)), aMin = Math.min(...after.map(r => r.R));
+        if(aMax > b + 2) add("bad", `1차 크랙 후 RoR이 ${b.toFixed(1)}→${aMax.toFixed(1)}℃/분으로 다시 상승 (플릭): 탄 맛·스모키 위험. 다음엔 크랙 30~60초 전 화력을 더 낮추세요.`);
+        else if(aMin < b * 0.4 && b > 3) add("bad", `1차 크랙 후 RoR이 ${b.toFixed(1)}→${aMin.toFixed(1)}℃/분으로 급락 (크래시): 밍밍한 베이킹 위험. 중반 화력을 유지하세요.`);
+        else add("ok", "1차 크랙 전후 RoR이 완만하게 이어졌습니다 (플릭·크래시 없음).");
+      }
+    } else if(!R.length) add("", "온도 기록이 부족하여 RoR 진단은 생략했습니다.");
+    // 감량률
+    const outW = parseFloat($("r-out").value);
+    if(outW > 0 && s.weight > 0){
+      const loss = (1 - outW / s.weight) * 100; res.lossPct = loss;
+      const lv = levelOf(loss), r = range(loss, p.loss);
+      add(r ? "warn" : "ok", `감량률 ${loss.toFixed(1)}% → ${lv.name} (${lv.use}). 목표 ${p.loss[0]}~${p.loss[1]}%` + (r<0 ? " — 목표보다 약배전" : r>0 ? " — 목표보다 강배전" : ""));
+      if(loss > 25 || loss < 8) add("bad", "감량률이 비정상적입니다. 무게 입력을 확인하세요.");
+    } else add("", "배출 무게를 입력하면 감량률과 배전도를 판정합니다.");
+    if(s.charge != null){
+      const sg = this.suggestFrom({charge: s.charge, events: ev}, p);
+      add("", `투입 ${s.charge}℃ → 다음 배치 투입 온도 제안 <b>${sg.next}℃</b>${sg.d ? ` (${sg.d > 0 ? "+" : ""}${sg.d}℃)` : " (유지)"} — ${esc(sg.why)}`);
+      sg.hints.forEach(h => add("", esc(h)));
+    } else add("warn", "투입 온도를 입력하지 않아 다음 배치 제안을 만들 수 없습니다.");
+    res.html = "<ul>" + out.join("") + "</ul>";
+    return res;
+  },
+  finish(){
+    if(!this.s || !this.s.ev.drop) return;
+    const r = this.analyze(); this.s.res = r;
+    $("r-analysis").innerHTML = r.html;
+  },
+  async saveBatch(){
+    if(!this.s || !this.s.ev.drop) return;
+    if(!this.s.res) this.finish();
+    const s = this.s, r = s.res, p = PROFILES.find(x => x.id === s.profile);
+    const bn = this.beans[$("r-beansel").value] || null;
+    if(bn && s.weight > this.remainingG(bn) && !(await this.ask(`투입량 ${s.weight}g이 남은 양 ${this.remainingG(bn)}g보다 많습니다. 그래도 저장할까요?`))) return;
+    const rec = {
+      id: Date.now(), date: new Date().toISOString(), profile: p.name, profileId: p.id, beanId: bn ? bn.id : null,
+      charge: s.charge, cold: s.cold, second: s.second,
+      bean: $("r-bean").value || (bn ? bn.name : ""), env: $("r-env").value, note: $("r-note").value,
+      weight: s.weight, out: parseFloat($("r-out").value) || null, loss: r.lossPct,
+      total: Math.round(r.total), dev: r.dev != null ? Math.round(r.dev) : null, dtr: r.dtr ?? null,
+      events: Object.fromEntries(Object.entries(s.ev).map(([k,v]) => [k, {t: Math.round(v.t), T: v.T}])),
+      points: s.pts.map(x => ({t: Math.round(x.t), T: x.T})),
+      tasting: ""
+    };
+    const all = this.load(); all.unshift(rec); this.store(all);
+    const left = bn ? this.remainingG(bn) : null;
+    const sg = this.suggestFrom({charge: rec.charge, events: rec.events}, p);
+    this.notify("배치를 저장했습니다." + (bn ? ` ${bn.name} 남은 양 ${left}g` + (left <= 0 ? " — 모두 소비했습니다." : "") : "") + (sg ? ` 다음 투입 온도 제안 ${sg.next}℃.` : ""));
+    this.reset(); this.tab(bn ? "beans" : "log");
+  },
+  reset(){
+    clearInterval(this.timerId); this.s = null;
+    $("r-timer").textContent = "0:00"; $("r-phase").textContent = "대기 중"; $("r-alert").innerHTML = "";
+    $("r-result").style.display = "none"; $("r-analysis").innerHTML = ""; $("b-start").disabled = false;
+    this.EVENTS.forEach(e => { const b = $("ev-"+e.k); b.disabled = true; b.textContent = e.label; });
+    $("r-charge").value = ""; $("r-cold").checked = false; $("r-second").checked = false; this.showSuggest();
+    this.draw();
+  },
+  draw(){
+    const cv = $("chart"); if(!cv || !cv.offsetWidth) return;
+    const dpr = window.devicePixelRatio || 1, W = cv.offsetWidth, H = 240;
+    cv.width = W*dpr; cv.height = H*dpr;
+    const c = cv.getContext("2d"); c.scale(dpr, dpr); c.clearRect(0,0,W,H);
+    const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+    const pts = this.s ? this.s.pts.slice().sort((a,b)=>a.t-b.t) : [];
+    const tMax = Math.max(720, this.s ? Math.ceil((this.elapsed()+30)/60)*60 : 0);
+    const temps = pts.map(p => p.T); const Tmin = temps.length ? Math.floor(Math.min(...temps)/20)*20 : 0, Tmax = temps.length ? Math.ceil(Math.max(...temps)/20)*20+20 : 240;
+    const L = 38, R = 38, T = 10, B = 22, w = W-L-R, h = H-T-B;
+    const x = t => L + t/tMax*w, y = v => T + h - (v-Tmin)/(Tmax-Tmin)*h;
+    c.strokeStyle = col("--line"); c.fillStyle = col("--mute"); c.font = "11px sans-serif"; c.lineWidth = 1;
+    for(let m = 0; m*60 <= tMax; m += 2){ c.beginPath(); c.moveTo(x(m*60),T); c.lineTo(x(m*60),T+h); c.stroke(); c.fillText(m+":00", x(m*60)-10, H-6); }
+    for(let v = Tmin; v <= Tmax; v += 20){ c.beginPath(); c.moveTo(L,y(v)); c.lineTo(L+w,y(v)); c.stroke(); c.fillText(v, 4, y(v)+4); }
+    // 목표 구간
+    if(this.s){
+      const p = this.profile(); c.fillStyle = "rgba(201,137,79,.15)";
+      c.fillRect(x(p.c1[0]), T, x(p.c1[1])-x(p.c1[0]), h);
+      c.fillStyle = col("--mute"); c.fillText("1C 목표", x(p.c1[0])+2, T+11);
+    }
+    if(pts.length){
+      c.strokeStyle = col("--accent"); c.lineWidth = 2; c.beginPath();
+      pts.forEach((p,i) => i ? c.lineTo(x(p.t), y(p.T)) : c.moveTo(x(p.t), y(p.T))); c.stroke();
+      c.fillStyle = col("--accent"); pts.forEach(p => { c.beginPath(); c.arc(x(p.t), y(p.T), 2.5, 0, 7); c.fill(); });
+      // RoR (우측 축 0~30)
+      const ror = this.ror();
+      if(ror.length){
+        c.strokeStyle = "#4a90c2"; c.lineWidth = 1.5; c.beginPath();
+        ror.forEach((r,i) => { const yy = T + h - Math.max(0, Math.min(30, r.R))/30*h; i ? c.lineTo(x(r.t), yy) : c.moveTo(x(r.t), yy); }); c.stroke();
+        c.fillStyle = "#4a90c2"; c.fillText("RoR", L+w+4, T+10); c.fillText("30", L+w+4, T+22); c.fillText("0", L+w+4, T+h);
+      }
+    }
+    if(this.s){
+      c.font = "10px sans-serif";
+      for(const [k,v] of Object.entries(this.s.ev)){
+        c.strokeStyle = col("--ink"); c.setLineDash([3,3]); c.beginPath(); c.moveTo(x(v.t),T); c.lineTo(x(v.t),T+h); c.stroke(); c.setLineDash([]);
+        c.fillStyle = col("--ink"); c.fillText(this.EVENTS.find(e=>e.k===k).label.replace("1차 크랙 ","1C "), Math.min(x(v.t)+2, W-60), T+h-4-(["tp","yellow","c1s","c1e","c2","drop"].indexOf(k)%3)*11);
+      }
+    }
+  },
+
+  /* ---------- 내 생두 ---------- */
+  beans: {}, openGuide: {},
+  loadBeans(){ try { this.beans = JSON.parse(localStorage.getItem("roast-beans") || "{}"); } catch(e){ this.beans = {}; } },
+  saveBeans(){ try { localStorage.setItem("roast-beans", JSON.stringify(this.beans)); } catch(e){} },
+  validBean(b){ return !!b && typeof b === "object" && typeof b.id === "string" && b.id !== "" && typeof b.name === "string" && PROFILES.some(p => p.id === b.profileId) && Number(b.purchasedG) > 0; },
+  importBeans(files){
+    [...files].forEach(f => f.text().then(t => {
+      try {
+        [].concat(JSON.parse(t)).forEach(b => {
+          if(this.validBean(b)) this.beans[b.id] = b;
+          else this.notify(f.name + ": bean.json 형식이 올바르지 않습니다 (id, name, profileId, purchasedG 필요).");
+        });
+        this.saveBeans(); this.renderBeans();
+      } catch(e){ this.notify(f.name + ": JSON을 읽을 수 없습니다."); }
+    }));
+    $("bn-file").value = "";
+  },
+  async loadRepoBeans(manual){
+    try {
+      const idx = await (await fetch("beans/index.json", {cache: "no-store"})).json();
+      for(const id of idx.beans || []){
+        const b = await (await fetch("beans/" + encodeURIComponent(id) + "/bean.json", {cache: "no-store"})).json();
+        if(this.validBean(b)) this.beans[b.id] = b;
+      }
+      this.saveBeans(); this.renderBeans();
+      if(manual) this.notify(`저장소의 생두 ${(idx.beans || []).length}종을 불러왔습니다.`);
+    } catch(e){
+      if(manual) this.notify("저장소에서 불러오지 못했습니다. 위의 파일 선택으로 bean.json을 불러오세요.");
+    }
+  },
+  toBeanBatch(b){ return {id: b.id, date: b.date, profile: b.profile, profileId: b.profileId, charge: b.charge, cold: b.cold, second: b.second, weightG: b.weight, outG: b.out, loss: b.loss, total: b.total, dev: b.dev, dtr: b.dtr, events: b.events, points: b.points, env: b.env, note: b.note, tasting: b.tasting}; },
+  allBatches(bean){
+    const m = new Map((bean.batches || []).map(b => [b.id, b]));
+    this.load().filter(b => b.beanId === bean.id).forEach(b => m.set(b.id, this.toBeanBatch(b)));
+    return [...m.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  },
+  remainingG(bean){ return Math.max(0, Math.round(bean.purchasedG - this.allBatches(bean).reduce((s, b) => s + (Number(b.weightG) || 0), 0))); },
+  isConsumed(bean){ return bean.status === "consumed" || this.remainingG(bean) <= 0; },
+  profileOf(bean){ return PROFILES.find(p => p.id === bean.profileId); },
+  beanLevel(bean){ const p = this.profileOf(bean); return LEVELS.find(l => l.key === bean.targetLevel) || levelOf((p.loss[0] + p.loss[1]) / 2); },
+  renderBeanSelect(){
+    const sel = $("r-beansel"), cur = sel.value;
+    sel.innerHTML = '<option value="">(선택 안 함)</option>' + Object.values(this.beans).filter(b => !this.isConsumed(b)).map(b => `<option value="${esc(b.id)}">${esc(b.name)} · ${this.remainingG(b)}g</option>`).join("");
+    sel.value = cur;
+  },
+  selBean(){
+    const b = this.beans[$("r-beansel").value], hint = $("r-beanhint");
+    if(!b){ hint.innerHTML = ""; this.showSuggest(); return; }
+    const rem = this.remainingG(b), n = this.allBatches(b).length, step = (b.batchPlan || [])[n];
+    $("r-profile").value = b.profileId; $("r-bean").value = b.name;
+    $("r-weight").value = Math.min(step ? step.weightG : (parseFloat($("r-weight").value) || 300), rem) || rem;
+    hint.innerHTML = `${esc(b.name)} · 남은 양 ${rem}g · ${n + 1}번째 배치` +
+      (step ? ` — 계획: ${esc(step.label)}${step.lossTarget ? ` (목표 감량 ${step.lossTarget[0]}~${step.lossTarget[1]}%)` : ""}${step.note ? " · " + esc(step.note) : ""}` : "") +
+      ((b.adjustments || []).length ? "<ul>" + b.adjustments.map(a => `<li>${esc(a)}</li>`).join("") + "</ul>" : "");
+    this.showSuggest();
+  },
+  roastBean(id){ $("r-beansel").value = id; this.tab("roast"); this.selBean(); },
+  toggleGuide(id){ this.openGuide[id] = !this.openGuide[id]; this.renderBeans(); },
+  async markConsumed(id){
+    if(!(await this.ask("남은 양과 관계없이 소비 완료로 처리할까요?"))) return;
+    this.beans[id].status = "consumed"; this.saveBeans(); this.renderBeans();
+  },
+  exportBean(id){
+    const bean = this.beans[id], out = JSON.parse(JSON.stringify(bean));
+    out.batches = this.allBatches(bean);
+    if(this.isConsumed(bean)) out.status = "consumed";
+    this.exportText(id.replace(/[^\w.-]/g, "_") + "-bean.json", "application/json", JSON.stringify(out, null, 2));
+  },
+  guideHtml(bean){
+    const p = this.profileOf(bean), lv = this.beanLevel(bean), o = bean.origin || {};
+    const rng = a => `${mmss(a[0])} ~ ${mmss(a[1])}`;
+    const auto = this.tips({density: bean.density, moist: bean.moisture, crop: bean.crop, expensive: bean.expensive, process: bean.process, kind: bean.profileId === "yemen" ? "yemen" : ""});
+    const adj = [...(bean.adjustments || [])]; auto.forEach(t => { if(!adj.includes(t)) adj.push(t); });
+    const dg = DEGAS[(lv.key === "light" || lv.key === "medlight") ? "drip-light" : "drip-medium"];
+    const rows = [["생산지", [o.country, o.region, o.farm].filter(Boolean).join(" / ") || "-"], ["품종·가공", [bean.variety, bean.process].filter(Boolean).join(" · ") || "-"],
+      ["고도·수확", [o.altitude ? o.altitude + "m" : "", bean.crop === "old" ? "올드크롭" : bean.crop === "new" ? "뉴크롭" : ""].filter(Boolean).join(" · ") || "-"],
+      ["밀도·수분", `${bean.density ?? "-"} g/ml · ${bean.moisture ?? "-"}%`], ["구입", `${esc(bean.supplier || "-")} · ${bean.purchasedAt || "-"} · ${bean.pricePerKg ? bean.pricePerKg.toLocaleString("ko-KR") + "원/kg" : "-"}`]];
+    return `<hr style="border:0;border-top:1px solid var(--line)">
+      <h2>생두 요약</h2><div class="kv">${rows.map(([k, v]) => `<b>${k}</b><span>${k === "구입" ? v : esc(v)}</span>`).join("")}</div>
+      <h2 style="margin-top:14px">로스팅 가이드 — ${esc(p.name)} <span class="tag">초반 화력 ${p.power}</span></h2>
+      <table><tr><td>옐로우</td><td>${rng(p.yellow)}</td></tr><tr><td>1차 크랙</td><td>${rng(p.c1)}</td></tr>
+      <tr><td>디벨롭</td><td>${rng(p.dev)} (DTR 약 ${p.dtr[0]}~${p.dtr[1]}%)</td></tr>
+      <tr><td>목표 배전도</td><td>${lv.name} — 감량 ${lv.lo}~${lv.hi > 25 ? "" : lv.hi}%${lv.hi > 25 ? " 이상" : ""} · ${esc(lv.use)}</td></tr>
+      <tr><td>프로파일 감량</td><td>${p.loss[0]}~${p.loss[1]}%</td></tr></table>
+      <p>${esc(p.note)}</p>
+      ${(bean.batchPlan || []).length ? "<b>배치 계획</b><ol>" + bean.batchPlan.map(s => `<li>${esc(s.label)} · ${s.weightG}g${s.lossTarget ? ` · 감량 ${s.lossTarget[0]}~${s.lossTarget[1]}%` : ""}${s.note ? " — " + esc(s.note) : ""}</li>`).join("") + "</ol>" : ""}
+      ${adj.length ? "<b>이 생두 보정</b><ul>" + adj.map(t => `<li>${esc(t)}</li>`).join("") + "</ul>" : ""}
+      <h2 style="margin-top:14px">핸드드립 가이드 (${lv.name} 기준)</h2>
+      <table><tr><td>숙성</td><td>${dg.min}~${dg.max}일 — ${esc(dg.note || dg.label)}</td></tr>
+      <tr><td>비율</td><td>1:15~1:17 (예: 15g → 225~255g)</td></tr><tr><td>물 온도</td><td>${lv.temp}</td></tr>
+      <tr><td>분쇄도</td><td>중간~중간 가늘게 (굵은 설탕 정도)</td></tr><tr><td>뜸</td><td>원두의 2~3배 물(15g 기준 30~45g), 30~45초</td></tr>
+      <tr><td>총 시간</td><td>2:30~3:30 (V60 기준)</td></tr><tr><td>목표</td><td>EY 18~22% · TDS 1.15~1.45%</td></tr></table>
+      <p class="small">맛이 어긋나면 「진단」 탭에서 증상별 조정 순서를 확인하세요.</p>
+      ${bean.notes ? `<p class="small">메모: ${esc(bean.notes)}</p>` : ""}
+      <p class="small">상세 가이드: <code>beans/${esc(bean.id)}/guide.md</code></p>`;
+  },
+  renderBeans(){
+    const list = Object.values(this.beans), box = $("beans-out");
+    this.renderBeanSelect();
+    if(!list.length){ box.innerHTML = '<div class="card">등록된 생두가 없습니다. 구매 화면 캡처를 Claude에게 보내면 <code>beans/</code> 폴더에 등록해 줍니다.</div>'; return; }
+    list.sort((a, b) => this.isConsumed(a) - this.isConsumed(b));
+    box.innerHTML = list.map(b => {
+      const rem = this.remainingG(b), pct = Math.round(rem / b.purchasedG * 100), done = this.isConsumed(b), open = !!this.openGuide[b.id];
+      return `<div class="card" data-id="${esc(b.id)}"><div class="row" style="justify-content:space-between"><b>${esc(b.name)}</b><span class="tag">${done ? "소비 완료" : "사용 중"}</span></div>
+        <div class="small">${esc(b.process)} · ${esc(b.variety)} · 배치 ${this.allBatches(b).length}회</div>
+        <div style="height:8px;background:var(--line);border-radius:4px;margin:8px 0"><div style="height:8px;width:${pct}%;background:var(--accent);border-radius:4px"></div></div>
+        <div class="small">남은 양 ${rem}g / ${b.purchasedG}g (${pct}%)</div>
+        ${done ? "" : this.beanSuggest(b)}
+        <div class="row" style="margin-top:8px">
+          <button class="sec" onclick="app.toggleGuide(this.closest('.card').dataset.id)">가이드 ${open ? "접기" : "보기"}</button>
+          ${done ? "" : `<button class="pri" onclick="app.roastBean(this.closest('.card').dataset.id)">이 생두로 로스팅</button><button class="sec" onclick="app.markConsumed(this.closest('.card').dataset.id)">소비 완료 처리</button>`}
+          <button class="sec" onclick="app.exportBean(this.closest('.card').dataset.id)">기록 포함 JSON 내보내기</button></div>
+        ${open ? this.guideHtml(b) : ""}</div>`;
+    }).join("");
+  },
+  // 로스팅 날짜 + 감량률 → 핸드드립 숙성 기간 (지식 베이스 5.1)
+  readyRange(b){
+    if(b.loss == null) return "-";
+    const lv = levelOf(b.loss), d = DEGAS[(lv.key === "light" || lv.key === "medlight") ? "drip-light" : "drip-medium"];
+    const base = new Date(b.date), f = n => { const x = new Date(base); x.setDate(x.getDate() + n); return x.toLocaleDateString("ko-KR", {month: "numeric", day: "numeric"}); };
+    return `핸드드립 ${f(d.min)} ~ ${f(d.max)}` + (lv.key === "light" || lv.key === "medlight" ? "" : ` · 에스프레소 ${f(7)} ~ ${f(14)}`);
+  },
+
+  /* ---------- 3. 배치 기록 ---------- */
+  load(){ try { return JSON.parse(localStorage.getItem("roast-batches") || "[]"); } catch(e){ return []; } },
+  store(a){ try { localStorage.setItem("roast-batches", JSON.stringify(a)); } catch(e){ this.notify("브라우저 저장소를 사용할 수 없습니다. JSON 내보내기를 이용해 주세요."); } },
+  renderLog(){
+    const all = this.load(), box = $("log-out");
+    if(!all.length){ box.innerHTML = '<div class="card">저장된 배치가 없습니다. 로스팅 세션에서 기록을 저장해 보세요.</div>'; return; }
+    box.innerHTML = all.map((b,i) => {
+      const lv = b.loss != null ? levelOf(b.loss).name : "-";
+      return `<div class="card"><div class="row" style="justify-content:space-between"><b>#${all.length-i} · ${esc(b.profile)}</b><span class="small">${esc(new Date(b.date).toLocaleString("ko-KR"))}</span></div>
+      <div class="kv"><b>생두</b><span>${esc(b.bean)||"-"}</span><b>투입/배출</b><span>${b.weight||"-"}g / ${b.out||"-"}g</span>
+      <b>감량률</b><span>${b.loss!=null ? b.loss.toFixed(1)+"% ("+lv+")" : "-"}</span>
+      <b>총시간/디벨롭</b><span>${mmss(b.total)} / ${b.dev!=null ? mmss(b.dev) : "-"}${b.dtr!=null ? " (DTR "+b.dtr.toFixed(1)+"%)" : ""}</span>
+      <b>투입 온도</b><span>${b.charge != null ? b.charge + "℃" : "-"}${b.cold ? " · 겨울·바람" : ""}${b.second ? " · 연속 배치" : ""}</span>
+      <b>이벤트</b><span>${Object.entries(b.events||{}).map(([k,v]) => esc((app.EVENTS.find(e=>e.k===k)||{label:k}).label)+" "+mmss(v.t)+(v.T!=null?" / "+v.T+"℃":"")).join(" · ")}</span>
+      <b>환경/메모</b><span>${esc(b.env)} ${esc(b.note)}</span>
+      <b>숙성 기준</b><span>${this.readyRange(b)}</span></div>
+      <label style="margin-top:8px">숙성 후 평가 (추출 레시피, 향/산미/단맛/바디/여운, 점수, 다음 배치 변경점 1~2개)</label>
+      <textarea rows="2" onchange="app.setTasting(${b.id}, this.value)">${esc(b.tasting)}</textarea>
+      <button class="sec" style="margin-top:6px" onclick="app.del(${b.id})">삭제</button></div>`;
+    }).join("");
+  },
+  setTasting(id, v){ const a = this.load(); const b = a.find(x => x.id === id); if(b){ b.tasting = v; this.store(a); } },
+  async del(id){ if(await this.ask("이 배치를 삭제할까요?")){ this.store(this.load().filter(b => b.id !== id)); this.renderLog(); } },
+  /* 화면 안 알림·확인·내보내기 창 (링크로 열린 페이지에서는 alert/confirm/다운로드가 막혀 있음) */
+  toastT: null,
+  notify(msg){ const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(this.toastT); this.toastT = setTimeout(() => { t.hidden = true; }, 5000); },
+  dialog(msg, btns, text){
+    return new Promise(resolve => {
+      $("dlg-msg").textContent = msg;
+      const ta = $("dlg-text"); ta.hidden = text == null; if(text != null) ta.value = text;
+      const box = $("dlg-btns"); box.innerHTML = "";
+      const close = v => { $("dlg").hidden = true; resolve(v); };
+      btns.forEach(([label, val, cls, fn]) => {
+        const b = document.createElement("button"); b.className = cls || "sec"; b.textContent = label;
+        b.onclick = () => fn ? fn(b) : close(val); box.appendChild(b);
+      });
+      $("dlg").hidden = false;
+    });
+  },
+  ask(msg){ return this.dialog(msg, [["취소", false], ["확인", true, "pri"]]); },
+  exportText(name, mime, text){
+    this.dialog(name + " — 아래 내용을 복사해서 대화창에 붙여넣으세요.", [
+      ["복사", null, "pri", b => {
+        const pick = () => { const t = $("dlg-text"); t.focus(); t.select(); b.textContent = "직접 복사하세요"; };
+        try { navigator.clipboard.writeText(text).then(() => { b.textContent = "복사됨"; }, pick); } catch(e){ pick(); }
+      }],
+      ["닫기", true]
+    ], text);
+  },
+  exportJson(){ this.exportText("roast-batches.json", "application/json", JSON.stringify(this.load(), null, 2)); },
+  exportCsv(){
+    const q = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const head = ["날짜","프로파일","생두","투입(g)","배출(g)","감량률(%)","총시간(초)","디벨롭(초)","DTR(%)","환경","메모","평가"];
+    const rows = this.load().map(b => [b.date,b.profile,b.bean,b.weight,b.out,b.loss!=null?b.loss.toFixed(1):"",b.total,b.dev,b.dtr!=null?b.dtr.toFixed(1):"",b.env,b.note,b.tasting].map(q).join(","));
+    this.exportText("roast-batches.csv", "text/csv", "﻿" + [head.map(q).join(","), ...rows].join("\n"));
+  },
+
+  /* ---------- 4. 진단 ---------- */
+  diag(){
+    const i = $("d-sym").value; if(i === ""){ $("diag-out").innerHTML = ""; return; }
+    const s = SYMPTOMS[i];
+    $("diag-out").innerHTML = `<div class="card"><span class="tag">${s.type} 문제</span><h2 style="margin-top:8px">${esc(s.cause)}</h2>
+      <b>조정 순서</b><ol>${s.fix.map(f => `<li>${esc(f)}</li>`).join("")}</ol>${s.check ? `<p class="small">구분 팁: ${esc(s.check)}</p>` : ""}</div>`;
+  },
+
+  /* ---------- 5. 추출·숙성 ---------- */
+  brew(){
+    const type = $("b-type").value, lv = LEVELS.find(l => l.key === $("b-roast").value), dose = parseFloat($("b-dose").value) || 0;
+    $("b-ratio-wrap").style.display = type === "drip" ? "" : "none";
+    const light = lv.key === "light" || lv.key === "medlight";
+    let html;
+    if(type === "drip"){
+      const r = parseFloat($("b-ratio").value); $("b-ratio-v").textContent = r;
+      html = `<table><tr><td>물 양</td><td><b>${(dose*r).toFixed(0)} g</b> (1:${r})</td></tr>
+        <tr><td>물 온도</td><td>${lv.temp}</td></tr>
+        <tr><td>분쇄도</td><td>중간~중간 가늘게 (굵은 설탕 정도)</td></tr>
+        <tr><td>뜸</td><td>${(dose*2).toFixed(0)}~${(dose*3).toFixed(0)} g, 30~45초</td></tr>
+        <tr><td>총 시간</td><td>2:30~3:30 (V60 기준)</td></tr>
+        <tr><td>목표</td><td>EY 18~22%, TDS 1.15~1.45%</td></tr></table>`;
+    } else {
+      const lo = light ? 2.2 : 2, hi = light ? 2.5 : 2;
+      html = `<table><tr><td>추출량</td><td><b>${(dose*lo).toFixed(0)}${hi!==lo ? "~"+(dose*hi).toFixed(0) : ""} g</b> (1:${lo}${hi!==lo ? "~1:"+hi : ""})</td></tr>
+        <tr><td>시간</td><td>25~32초</td></tr>
+        <tr><td>물 온도</td><td>${light ? "94~95℃ (라이트는 높게)" : "92~95℃"}</td></tr>
+        <tr><td>목표</td><td>EY 18~22%, TDS 8~12%</td></tr></table>`;
+    }
+    $("brew-out").innerHTML = html + `<p class="small">물: 총경도 약 50~175ppm, 무취·무염소. 초순수·증류수는 밍밍해집니다.</p>`;
+  },
+  ey(){
+    const tds = parseFloat($("e-tds").value), out = parseFloat($("e-out").value), dose = parseFloat($("e-dose").value);
+    if(!(tds > 0 && out > 0 && dose > 0)){ $("ey-out").innerHTML = ""; return; }
+    const ey = tds * out / dose;
+    const cls = ey < 18 ? "warn" : ey > 22 ? "warn" : "ok";
+    const msg = ey < 18 ? "추출 부족 쪽 — 분쇄를 가늘게, 온도를 올리거나 시간을 연장하세요." : ey > 22 ? "추출 과다 쪽 — 분쇄를 굵게, 온도를 낮추세요." : "목표 범위(18~22%)입니다.";
+    $("ey-out").innerHTML = `<b class="${cls}">EY ${ey.toFixed(1)}%</b> — ${msg}`;
+  },
+  degas(){
+    const d = $("g-date").value, u = DEGAS[$("g-use").value]; if(!d){ $("degas-out").innerHTML = ""; return; }
+    const base = new Date(d + "T00:00:00"), fmt = x => x.toLocaleDateString("ko-KR", {month:"long", day:"numeric", weekday:"short"});
+    const add = n => { const x = new Date(base); x.setHours(x.getHours() + n*24); return x; };
+    const rng = u.min < 1 ? `로스팅 후 8~24시간 (${fmt(base)} ~ ${fmt(add(1))})` : `${fmt(add(u.min))} ~ ${fmt(add(u.max))} (${u.min}~${u.max}일)`;
+    $("degas-out").innerHTML = `<b>${esc(u.label)}</b>: ${rng}${u.note ? `<br><span class="small">${esc(u.note)}</span>` : ""}
+      <p class="small">보관: 원웨이 밸브 봉투, 직사광선·고온 회피, 개봉 후 2~4주 내 소진. 장기 보관은 소분 밀봉 후 냉동하고 밀봉 상태로 실온 복귀.</p>`;
+  },
+  cup(){
+    const n = parseInt($("c-n").value) || 0;
+    $("cup-out").innerHTML = n > 0 ? `원두 <b>${(n*8.25).toFixed(2)} g</b> / 컵당 물 150 ml (컵당 8.25 g)` : "";
+  }
+};
+app.init();
+// 폰 설치(PWA)용 오프라인 캐시. 파일로 직접 열었거나 링크 페이지처럼 지원되지 않는 곳에서는 조용히 건너뛴다.
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  window.addEventListener("load", () => { try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch(e){} });
+}
+</script>
+</body>
+</html>
