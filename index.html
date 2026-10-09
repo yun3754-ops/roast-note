@@ -137,17 +137,26 @@ ul{margin:6px 0;padding-left:20px}
       <button class="sec" onclick="app.loadRepoBeans(true)">저장소에서 불러오기</button>
     </div>
   </div>
+  <div class="card">
+    <h2>사진·캡처로 등록</h2>
+    <p class="small">구매 화면 캡처나 포장 라벨 사진을 고르면 글자를 읽어 아래 등록 폼을 채웁니다. 사진은 폰 안에서만 처리되고 어디로도 전송되지 않습니다. 처음 한 번은 인식 데이터(약 10MB)를 내려받습니다. 읽은 값은 꼭 확인하고 고쳐 주세요.</p>
+    <input id="ocr-file" type="file" accept="image/*" onchange="app.ocr(this.files[0])">
+    <div class="small" id="ocr-status" role="status" style="margin-top:8px"></div>
+    <details id="ocr-raw" hidden><summary class="small">인식된 원문 보기</summary><pre id="ocr-text" style="white-space:pre-wrap;font-size:12px;overflow-x:auto"></pre></details>
+  </div>
   <details class="card" id="nb-box">
     <summary style="cursor:pointer;font-weight:600">＋ 생두 직접 등록 (구매 화면을 보고 입력)</summary>
     <p class="small">입력한 조건으로 시작 프로파일, 로스팅·핸드드립 가이드, 배치 계획이 자동으로 만들어집니다. 모르는 칸은 비워 두세요.</p>
     <div class="grid">
       <div><label>이름 *</label><input id="nb-name" placeholder="예: 에티오피아 구지 G1 내추럴"></div>
-      <div><label>생산국·지역</label><input id="nb-origin" placeholder="예: 에티오피아 / 구지"></div>
+      <div><label>생산국 / 지역</label><input id="nb-origin" placeholder="예: 에티오피아 / 구지"></div>
+      <div><label>생산자·가공소</label><input id="nb-farm"></div>
+      <div><label>입고일자 (판매 페이지 표기)</label><input id="nb-arrived" type="date"></div>
       <div><label>품종</label><input id="nb-variety" placeholder="예: 74110"></div>
       <div><label>가공방식</label><select id="nb-process"><option>워시드</option><option>내추럴</option><option>허니</option><option>무산소</option><option>기타</option></select></div>
       <div><label>특수 분류</label><select id="nb-kind"><option value="">일반</option><option value="gesha">게이샤</option><option value="yemen">예멘</option><option value="excelsa">엑셀사</option><option value="robusta">로부스타·CxR</option></select></div>
       <div><label>용도</label><select id="nb-purpose"><option value="filter">필터(핸드드립)</option><option value="espresso">에스프레소 블렌드 베이스</option></select></div>
-      <div><label>수확연도</label><select id="nb-crop"><option value="new">뉴크롭</option><option value="old">올드크롭</option></select></div>
+      <div><label>수확연도</label><select id="nb-crop"><option value="">미확인</option><option value="new">뉴크롭</option><option value="old">올드크롭</option></select></div>
       <div><label>고도 (m)</label><input id="nb-alt" type="number"></div>
       <div><label>밀도 (g/ml)</label><input id="nb-density" type="number" step="0.01"></div>
       <div><label>수분 (%)</label><input id="nb-moist" type="number" step="0.1"></div>
@@ -157,6 +166,7 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>구입일</label><input id="nb-date" type="date"></div>
       <div><label>목표 배전도</label><select id="nb-level"><option value="">프로파일 기본값</option></select></div>
     </div>
+    <label style="margin-top:10px">메모 (컵 노트 등)</label><textarea id="nb-notes" rows="2"></textarea>
     <label style="margin-top:10px"><input type="checkbox" id="nb-expensive" style="width:auto"> 고가 생두 (소량으로 나눠 배전도를 비교하는 계획을 만듭니다)</label>
     <div class="row" style="margin-top:8px"><button class="pri" onclick="app.addBean()">등록하고 가이드 보기</button></div>
   </details>
@@ -671,6 +681,93 @@ const app = {
       ((b.adjustments || []).length ? "<ul>" + b.adjustments.map(a => `<li>${esc(a)}</li>`).join("") + "</ul>" : "");
     this.showSuggest();
   },
+  /* ---------- 사진·캡처 인식 (tesseract.js, 폰 안에서만 처리) ---------- */
+  ocrBusy: false,
+  loadScript(src){
+    return new Promise((ok, fail) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => fail(new Error("스크립트를 불러오지 못했습니다: " + src)); document.head.appendChild(s); });
+  },
+  async ocr(file){
+    if(!file || this.ocrBusy) return;
+    const st = $("ocr-status"); this.ocrBusy = true; $("ocr-raw").hidden = true;
+    try {
+      st.textContent = "이미지를 준비하는 중…";
+      const url = URL.createObjectURL(file), img = new Image(); img.src = url; await img.decode();
+      const k = Math.min(1, 2200 / Math.max(img.naturalWidth, img.naturalHeight)), cv = document.createElement("canvas");
+      cv.width = Math.round(img.naturalWidth * k); cv.height = Math.round(img.naturalHeight * k);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+      const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+      if(!window.Tesseract) await this.loadScript("vendor/tesseract/tesseract.min.js");
+      const base = new URL("vendor/tesseract/", location.href).href, texts = [];
+      for(const [langs, label] of [["kor", "1/2 한글"], ["kor+eng", "2/2 영문·숫자"]]){
+        const w = await Tesseract.createWorker(langs, 1, {workerPath: base + "worker.min.js", corePath: base, langPath: base, gzip: false,
+          logger: m => { st.textContent = m.status === "recognizing text" ? `글자 인식 ${label} ${Math.round(m.progress * 100)}%` : `${label} 준비 중… (처음에는 데이터를 내려받느라 오래 걸립니다)`; }});
+        texts.push((await w.recognize(blob)).data.text); await w.terminate();
+      }
+      $("ocr-text").textContent = "[한글]\n" + texts[0] + "\n[영문·숫자]\n" + texts[1]; $("ocr-raw").hidden = false;
+      const r = this.parseBeanText(texts[0], texts[1]), got = this.fillBeanForm(r);
+      st.innerHTML = got.found.length
+        ? `<b>인식 완료.</b> 아래 「생두 직접 등록」 폼에 채웠습니다. 읽은 항목: ${esc(got.found.join(", "))}. 못 읽은 항목: ${esc(got.missing.join(", ") || "없음")}. 값이 맞는지 확인하고, 구입량(kg)을 입력한 뒤 등록하세요.`
+          + (r.prices.length || r.kgs.length ? `<br>페이지에서 본 가격·용량 후보: ${esc([...r.prices.map(p => p + "원"), ...r.kgs.map(x => x + "kg")].join(", "))} (어느 것이 구입 옵션인지 직접 확인해 입력하세요)` : "")
+        : "글자를 거의 읽지 못했습니다. 글자가 크고 선명한 화면 캡처로 다시 시도하거나, 아래 폼에 직접 입력해 주세요.";
+    } catch(e){
+      st.textContent = "사진 인식을 사용할 수 없습니다: " + (e && e.message ? e.message : e) + " — 웹 주소로 설치한 앱에서 사용해 주세요. 아래 폼에 직접 입력해도 됩니다.";
+    } finally { this.ocrBusy = false; $("ocr-file").value = ""; }
+  },
+  // 품종: 영문·숫자 오인식(SL28 → 5128 등)을 지식 베이스의 품종 목록으로 바로잡는다.
+  fixVariety(raw){
+    const known = ["SL28","SL34","SL14","K7","Ruiru11","Batian","Gesha","Geisha","Bourbon","Catuai","Typica","IH90","Heirloom","74110","74112","74158","게이샤","파카마라","마라카투라","버번","카투라","카투아이","티피카","엑셀사","로부스타","밀레니오","헤이룸"];
+    const s = String(raw).replace(/\s+/g, ""), hit = x => known.find(n => n.toLowerCase() === x.toLowerCase());
+    return hit(s) || hit(s.replace(/^5/, "S").replace(/^S[1Il|]/, "SL")) || String(raw).trim();
+  },
+  // 한글 항목은 kor 결과, 이름·영문은 kor+eng 결과를 쓰고, 라벨(가공방식, 품종 등) 뒤의 값만 읽는다.
+  parseBeanText(korText, mixText){
+    const toLines = t => String(t || "").split("\n").map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+    const A = toLines(korText), B = toLines(mixText);
+    const wordOk = /^[가-힣A-Za-z0-9·().,'-]+$/, wordNoDigit = /^[가-힣A-Za-z·().,'-]+$/;
+    const clean = (s, re) => { const out = []; for(const t of s.split(" ")){ if(re.test(t)) out.push(t); else break; } return out.join(" "); };
+    const rawOf = (lines, label) => { const pat = new RegExp("^" + label.split("").join("\\s*") + "\\s*[:：;]\\s*(.+)$"); for(const l of lines){ const m = l.match(pat); if(m) return m[1]; } return ""; };
+    const find = (label, re) => clean(rawOf(A, label), re) || clean(rawOf(B, label), re);
+    const out = {name: "", notes: "", country: "", region: "", farm: "", variety: "", process: "", kind: "", altitude: null, arrived: "", prices: [], kgs: []};
+    const producer = find("생산자", wordNoDigit), plant = find("가공소", wordNoDigit);
+    out.farm = producer && plant ? `${producer} (${plant})` : producer || plant;
+    out.region = find("지역", wordNoDigit);
+    const v = find("품종", wordOk); out.variety = v ? this.fixVariety(v) : "";
+    const pr = find("가공방식", wordNoDigit).toLowerCase();
+    out.process = /워시드|washed|수세/.test(pr) ? "워시드" : /내추럴|natural|건식/.test(pr) ? "내추럴" : /허니|honey/.test(pr) ? "허니" : /무산소|아나|anaerobic|카보닉/.test(pr) ? "무산소" : "";
+    const alt = rawOf(A, "재배고도") || rawOf(B, "재배고도") || rawOf(A, "고도") || rawOf(B, "고도");
+    const nums = (alt.match(/\d[\d,]*/g) || []).map(x => +x.replace(/,/g, "")).filter(n => n >= 300 && n <= 3000);
+    out.altitude = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
+    const dm = (rawOf(A, "입고일자") || rawOf(B, "입고일자")).match(/(\d{2,4})\s*[.\/-]\s*(\d{1,2})\s*[.\/-]\s*(\d{1,2})/);
+    if(dm){ const y = +dm[1] < 100 ? 2000 + +dm[1] : +dm[1]; out.arrived = `${y}-${String(dm[2]).padStart(2, "0")}-${String(dm[3]).padStart(2, "0")}`; }
+    const labelRe = new RegExp("^(" + ["가공소","생산자","지역","재배고도","품종","가공방식","입고일자"].map(l => l.split("").join("\\s*")).join("|") + ")\\s*[:：;]");
+    const k = B.findIndex(l => labelRe.test(l));
+    if(k > 0){
+      const isNotes = l => l && l.split(" ").length >= 3 && (l.match(/[가-힣]/g) || []).length >= l.replace(/\s/g, "").length * 0.7;
+      let i = k - 1;
+      if(isNotes(B[i])){ out.notes = B[i]; i--; }
+      if(i >= 0 && /^[A-Za-z0-9 .'&-]+$/.test(B[i])) i--;
+      if(i >= 0) out.name = B[i].replace(/[^가-힣A-Za-z0-9 .'&()-]/g, "").replace(/\s+/g, " ").trim();
+    }
+    const countries = ["케냐","에티오피아","콜롬비아","과테말라","코스타리카","브라질","파나마","예멘","인도네시아","베트남","르완다","부룬디","탄자니아","엘살바도르","온두라스","페루","인도","멕시코","니카라과","우간다","볼리비아","에콰도르","자메이카","하와이","파푸아뉴기니","라오스","태국","미얀마","도미니카","콩고"];
+    const all = A.join(" ");
+    out.country = countries.find(c => out.name.includes(c)) || countries.find(c => all.includes(c)) || "";
+    const idText = (out.name + " " + out.variety).toLowerCase();
+    out.kind = /게이샤|geisha|gesha/.test(idText) ? "gesha" : /예멘|yemen/.test(idText) ? "yemen" : /엑셀사|excelsa/.test(idText) ? "excelsa" : /로부스타|robusta|cxr/.test(idText) ? "robusta" : "";
+    const both = A.join("\n") + "\n" + B.join("\n");
+    out.prices = [...new Set([...both.matchAll(/([0-9][0-9,]{3,})\s*원/g)].map(m => m[1]))].slice(0, 4);
+    out.kgs = [...new Set([...both.matchAll(/(\d+(?:\.\d+)?)\s*kg/gi)].map(m => m[1]))].slice(0, 4);
+    return out;
+  },
+  fillBeanForm(r){
+    const set = (id, val) => { if(val != null && val !== "") $(id).value = val; };
+    set("nb-name", r.name); set("nb-origin", [r.country, r.region].filter(Boolean).join(" / ")); set("nb-farm", r.farm);
+    set("nb-variety", r.variety); set("nb-alt", r.altitude); set("nb-arrived", r.arrived); set("nb-notes", r.notes ? "컵 노트: " + r.notes : "");
+    if(r.process) $("nb-process").value = r.process;
+    if(r.kind) $("nb-kind").value = r.kind;
+    const items = [["이름", r.name], ["생산국", r.country], ["지역", r.region], ["생산자·가공소", r.farm], ["품종", r.variety], ["가공방식", r.process], ["고도", r.altitude], ["입고일자", r.arrived], ["컵 노트", r.notes]];
+    $("nb-box").open = true;
+    return {found: items.filter(x => x[1]).map(x => x[0]), missing: items.filter(x => !x[1]).map(x => x[0])};
+  },
   // 앱에서 직접 등록: 입력 조건 → 프로파일 선택(지식 베이스 4장) → 배치 계획(고가 생두는 4.1장·7.2장)
   addBean(){
     const v = id => $(id).value.trim(), num = id => { const x = parseFloat(v(id)); return isNaN(x) ? null : x; };
@@ -688,12 +785,14 @@ const app = {
     const d = v("nb-date") || new Date().toISOString().slice(0, 10);
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "bean";
     const id = d.slice(0, 7) + "-" + slug + "-" + Date.now().toString(36).slice(-4);
-    this.beans[id] = {id, name, status: "active", origin: {country: v("nb-origin"), region: "", farm: "", altitude: num("nb-alt")},
-      variety: v("nb-variety"), process, crop: v("nb-crop"), supplier: v("nb-supplier"), purchasedAt: d, purchasedG: Math.round(kg * 1000),
+    const [country, ...rest] = v("nb-origin").split("/").map(s => s.trim());
+    this.beans[id] = {id, name, status: "active", origin: {country: country || "", region: rest.join(" / "), farm: v("nb-farm"), altitude: num("nb-alt")},
+      variety: v("nb-variety"), process, crop: v("nb-crop"), supplier: v("nb-supplier"), purchasedAt: d, arrivedAt: v("nb-arrived") || null, purchasedG: Math.round(kg * 1000),
       pricePerKg: num("nb-price"), density: num("nb-density"), moisture: num("nb-moist"), expensive, profileId,
-      targetLevel: v("nb-level") || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: "", batches: []};
+      targetLevel: v("nb-level") || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: v("nb-notes"), batches: []};
     this.saveBeans(); this.openGuide[id] = true; this.renderBeans();
-    ["nb-name","nb-origin","nb-variety","nb-alt","nb-density","nb-moist","nb-kg","nb-price","nb-supplier","nb-date"].forEach(f => { $(f).value = ""; });
+    ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-alt","nb-density","nb-moist","nb-kg","nb-price","nb-supplier","nb-date","nb-notes"].forEach(f => { $(f).value = ""; });
+    $("nb-crop").value = "";
     $("nb-expensive").checked = false; $("nb-box").open = false;
     this.notify("등록했습니다. 아래에서 가이드를 확인하세요.");
   },
@@ -717,9 +816,13 @@ const app = {
     const rng = a => `${mmss(a[0])} ~ ${mmss(a[1])}`;
     const auto = this.tips({density: bean.density, moist: bean.moisture, crop: bean.crop, expensive: bean.expensive, process: bean.process, kind: bean.profileId === "yemen" ? "yemen" : ""});
     const adj = [...(bean.adjustments || [])]; auto.forEach(t => { if(!adj.includes(t)) adj.push(t); });
+    if(!bean.crop && bean.arrivedAt){
+      const mo = Math.floor((Date.now() - new Date(bean.arrivedAt)) / 2629800000);
+      if(mo >= 3) adj.push(`수확연도 미확인 (입고 후 ${mo}개월 경과): 수분·밀도를 실측하고, 평소보다 빨리 익거나 향이 약하면 올드크롭처럼 화력을 약간 낮추세요.`);
+    }
     const dg = DEGAS[(lv.key === "light" || lv.key === "medlight") ? "drip-light" : "drip-medium"];
     const rows = [["생산지", [o.country, o.region, o.farm].filter(Boolean).join(" / ") || "-"], ["품종·가공", [bean.variety, bean.process].filter(Boolean).join(" · ") || "-"],
-      ["고도·수확", [o.altitude ? o.altitude + "m" : "", bean.crop === "old" ? "올드크롭" : bean.crop === "new" ? "뉴크롭" : ""].filter(Boolean).join(" · ") || "-"],
+      ["고도·수확", [o.altitude ? o.altitude + "m" : "", bean.crop === "old" ? "올드크롭" : bean.crop === "new" ? "뉴크롭" : "수확연도 미확인"].filter(Boolean).join(" · ") || "-"], ["입고", bean.arrivedAt || "-"],
       ["밀도·수분", `${bean.density ?? "-"} g/ml · ${bean.moisture ?? "-"}%`], ["구입", `${esc(bean.supplier || "-")} · ${bean.purchasedAt || "-"} · ${bean.pricePerKg ? bean.pricePerKg.toLocaleString("ko-KR") + "원/kg" : "-"}`]];
     return `<hr style="border:0;border-top:1px solid var(--line)">
       <h2>생두 요약</h2><div class="kv">${rows.map(([k, v]) => `<b>${k}</b><span>${k === "구입" ? v : esc(v)}</span>`).join("")}</div>
