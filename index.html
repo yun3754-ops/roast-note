@@ -137,6 +137,29 @@ ul{margin:6px 0;padding-left:20px}
       <button class="sec" onclick="app.loadRepoBeans(true)">저장소에서 불러오기</button>
     </div>
   </div>
+  <details class="card" id="nb-box">
+    <summary style="cursor:pointer;font-weight:600">＋ 생두 직접 등록 (구매 화면을 보고 입력)</summary>
+    <p class="small">입력한 조건으로 시작 프로파일, 로스팅·핸드드립 가이드, 배치 계획이 자동으로 만들어집니다. 모르는 칸은 비워 두세요.</p>
+    <div class="grid">
+      <div><label>이름 *</label><input id="nb-name" placeholder="예: 에티오피아 구지 G1 내추럴"></div>
+      <div><label>생산국·지역</label><input id="nb-origin" placeholder="예: 에티오피아 / 구지"></div>
+      <div><label>품종</label><input id="nb-variety" placeholder="예: 74110"></div>
+      <div><label>가공방식</label><select id="nb-process"><option>워시드</option><option>내추럴</option><option>허니</option><option>무산소</option><option>기타</option></select></div>
+      <div><label>특수 분류</label><select id="nb-kind"><option value="">일반</option><option value="gesha">게이샤</option><option value="yemen">예멘</option><option value="excelsa">엑셀사</option><option value="robusta">로부스타·CxR</option></select></div>
+      <div><label>용도</label><select id="nb-purpose"><option value="filter">필터(핸드드립)</option><option value="espresso">에스프레소 블렌드 베이스</option></select></div>
+      <div><label>수확연도</label><select id="nb-crop"><option value="new">뉴크롭</option><option value="old">올드크롭</option></select></div>
+      <div><label>고도 (m)</label><input id="nb-alt" type="number"></div>
+      <div><label>밀도 (g/ml)</label><input id="nb-density" type="number" step="0.01"></div>
+      <div><label>수분 (%)</label><input id="nb-moist" type="number" step="0.1"></div>
+      <div><label>구입량 (kg) *</label><input id="nb-kg" type="number" step="0.1"></div>
+      <div><label>kg당 가격 (원)</label><input id="nb-price" type="number"></div>
+      <div><label>구입처</label><input id="nb-supplier"></div>
+      <div><label>구입일</label><input id="nb-date" type="date"></div>
+      <div><label>목표 배전도</label><select id="nb-level"><option value="">프로파일 기본값</option></select></div>
+    </div>
+    <label style="margin-top:10px"><input type="checkbox" id="nb-expensive" style="width:auto"> 고가 생두 (소량으로 나눠 배전도를 비교하는 계획을 만듭니다)</label>
+    <div class="row" style="margin-top:8px"><button class="pri" onclick="app.addBean()">등록하고 가이드 보기</button></div>
+  </details>
   <div id="beans-out"></div>
 </section>
 
@@ -280,6 +303,7 @@ const app = {
     $("d-sym").innerHTML = '<option value="">선택하세요</option>' + SYMPTOMS.map((s,i) => `<option value="${i}">${s.k}</option>`).join("");
     $("defect-table").innerHTML = "<tr><th>결점</th><th>원인</th><th>맛</th><th>대응</th></tr>" + DEFECTS.map(d => "<tr>"+d.map(c=>`<td>${c}</td>`).join("")+"</tr>").join("");
     $("b-roast").innerHTML = LEVELS.map(l => `<option value="${l.key}" ${l.key==="medlight"?"selected":""}>${l.name}</option>`).join("");
+    $("nb-level").innerHTML += LEVELS.map(l => `<option value="${l.key}">${l.name}</option>`).join("");
     $("g-use").innerHTML = Object.entries(DEGAS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join("");
     $("g-date").value = new Date().toISOString().slice(0,10);
     $("p-dens-help").textContent = "대략 0.72 이상 고밀도, 0.65 이하 저밀도.";
@@ -647,6 +671,35 @@ const app = {
       ((b.adjustments || []).length ? "<ul>" + b.adjustments.map(a => `<li>${esc(a)}</li>`).join("") + "</ul>" : "");
     this.showSuggest();
   },
+  // 앱에서 직접 등록: 입력 조건 → 프로파일 선택(지식 베이스 4장) → 배치 계획(고가 생두는 4.1장·7.2장)
+  addBean(){
+    const v = id => $(id).value.trim(), num = id => { const x = parseFloat(v(id)); return isNaN(x) ? null : x; };
+    const name = v("nb-name"), kg = parseFloat(v("nb-kg"));
+    if(!name) return this.notify("생두 이름을 입력해 주세요.");
+    if(!(kg > 0)) return this.notify("구입량(kg)을 입력해 주세요.");
+    const process = v("nb-process"), kind = v("nb-kind"), expensive = $("nb-expensive").checked;
+    const profileId = this.pick(kind, v("nb-purpose"), process === "기타" ? "무산소" : process);
+    const p = PROFILES.find(x => x.id === profileId), r1 = n => Math.round(n * 10) / 10, mid = (p.loss[0] + p.loss[1]) / 2;
+    const plan = expensive ? [
+      {label: "보수적 첫 배치", weightG: 150, lossTarget: [p.loss[0], r1(p.loss[0] + 1)], note: "가장 약하게. 3~5일 숙성 후 커핑으로 판단"},
+      {label: "배전도 비교 (중간)", weightG: 150, lossTarget: [r1(mid - 0.5), r1(mid + 0.5)], note: "첫 배치와 나란히 커핑"},
+      {label: "배전도 비교 (강한 쪽)", weightG: 150, lossTarget: [r1(p.loss[1] - 1), p.loss[1]], note: "취향 지점을 정한 뒤 나머지를 볶기"}
+    ] : [];
+    const d = v("nb-date") || new Date().toISOString().slice(0, 10);
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "bean";
+    const id = d.slice(0, 7) + "-" + slug + "-" + Date.now().toString(36).slice(-4);
+    this.beans[id] = {id, name, status: "active", origin: {country: v("nb-origin"), region: "", farm: "", altitude: num("nb-alt")},
+      variety: v("nb-variety"), process, crop: v("nb-crop"), supplier: v("nb-supplier"), purchasedAt: d, purchasedG: Math.round(kg * 1000),
+      pricePerKg: num("nb-price"), density: num("nb-density"), moisture: num("nb-moist"), expensive, profileId,
+      targetLevel: v("nb-level") || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: "", batches: []};
+    this.saveBeans(); this.openGuide[id] = true; this.renderBeans();
+    ["nb-name","nb-origin","nb-variety","nb-alt","nb-density","nb-moist","nb-kg","nb-price","nb-supplier","nb-date"].forEach(f => { $(f).value = ""; });
+    $("nb-expensive").checked = false; $("nb-box").open = false;
+    this.notify("등록했습니다. 아래에서 가이드를 확인하세요.");
+  },
+  delBean(id){
+    this.ask("이 생두를 목록에서 삭제할까요? 저장된 배치 기록은 「배치 기록」 탭에 남습니다.").then(ok => { if(ok){ delete this.beans[id]; this.saveBeans(); this.renderBeans(); } });
+  },
   roastBean(id){ $("r-beansel").value = id; this.tab("roast"); this.selBean(); },
   toggleGuide(id){ this.openGuide[id] = !this.openGuide[id]; this.renderBeans(); },
   async markConsumed(id){
@@ -690,7 +743,7 @@ const app = {
   renderBeans(){
     const list = Object.values(this.beans), box = $("beans-out");
     this.renderBeanSelect();
-    if(!list.length){ box.innerHTML = '<div class="card">등록된 생두가 없습니다. 구매 화면 캡처를 Claude에게 보내면 <code>beans/</code> 폴더에 등록해 줍니다.</div>'; return; }
+    if(!list.length){ box.innerHTML = '<div class="card">등록된 생두가 없습니다. 위의 「생두 직접 등록」에 입력하거나, 구매 화면 캡처를 Claude에게 보내면 <code>beans/</code> 폴더에 등록해 줍니다.</div>'; return; }
     list.sort((a, b) => this.isConsumed(a) - this.isConsumed(b));
     box.innerHTML = list.map(b => {
       const rem = this.remainingG(b), pct = Math.round(rem / b.purchasedG * 100), done = this.isConsumed(b), open = !!this.openGuide[b.id];
@@ -702,7 +755,8 @@ const app = {
         <div class="row" style="margin-top:8px">
           <button class="sec" onclick="app.toggleGuide(this.closest('.card').dataset.id)">가이드 ${open ? "접기" : "보기"}</button>
           ${done ? "" : `<button class="pri" onclick="app.roastBean(this.closest('.card').dataset.id)">이 생두로 로스팅</button><button class="sec" onclick="app.markConsumed(this.closest('.card').dataset.id)">소비 완료 처리</button>`}
-          <button class="sec" onclick="app.exportBean(this.closest('.card').dataset.id)">기록 포함 JSON 내보내기</button></div>
+          <button class="sec" onclick="app.exportBean(this.closest('.card').dataset.id)">기록 포함 JSON 내보내기</button>
+          <button class="sec" onclick="app.delBean(this.closest('.card').dataset.id)">삭제</button></div>
         ${open ? this.guideHtml(b) : ""}</div>`;
     }).join("");
   },
