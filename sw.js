@@ -1,6 +1,6 @@
 // 오프라인 지원: 같은 출처의 GET 요청은 네트워크를 먼저 시도하고, 실패하면 마지막으로 받은 사본을 쓴다.
 // 로스팅 중 전파가 약해도 앱이 열리고, 새 버전과 beans/ 파일은 온라인일 때 바로 반영된다.
-const CACHE = "roast-note-v4";
+const CACHE = "roast-note-v5";
 const VENDOR = "roast-vendor-v1"; // OCR 데이터는 앱 버전이 바뀌어도 지우지 않는다
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 

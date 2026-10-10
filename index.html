@@ -160,7 +160,7 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>고도 (m)</label><input id="nb-alt" type="number"></div>
       <div><label>밀도 (g/ml)</label><input id="nb-density" type="number" step="0.01"></div>
       <div><label>수분 (%)</label><input id="nb-moist" type="number" step="0.1"></div>
-      <div><label>구입량 (kg) *</label><input id="nb-kg" type="number" step="0.1"></div>
+      <div><label>구입량 (kg) *</label><input id="nb-kg" type="number" step="0.1" value="1"></div>
       <div><label>kg당 가격 (원)</label><input id="nb-price" type="number"></div>
       <div><label>구입처</label><input id="nb-supplier"></div>
       <div><label>구입일</label><input id="nb-date" type="date"></div>
@@ -175,6 +175,32 @@ ul{margin:6px 0;padding-left:20px}
 
 <!-- 3. 배치 기록 -->
 <section id="t-log">
+  <div id="stock-out"></div>
+  <details class="card" id="st-box">
+    <summary style="cursor:pointer;font-weight:600">＋ 재고·로스팅 수동 기록 (눌러서 열기)</summary>
+    <h2 style="margin-top:12px">재고 기록</h2>
+    <p class="small">생두를 더 샀거나 결점두를 골라냈을 때, 남은 생두를 저울로 직접 달았을 때, 볶은 원두를 마시거나 나눴을 때 기록합니다.</p>
+    <div class="grid">
+      <div><label>생두</label><select id="st-bean" onchange="this.dataset.touched='1'"></select></div>
+      <div><label>종류</label><select id="st-type" onchange="app.stockHint()">
+        <option value="green_set">남은 생두 실측값으로 맞추기</option><option value="green_in">생두 추가 입고 (+)</option>
+        <option value="green_out">생두 차감 (결점두·폐기·오차) (−)</option><option value="roasted_use">원두 사용 (추출·선물·판매) (−)</option></select></div>
+      <div><label id="st-g-label">실측한 남은 생두 (g)</label><input id="st-g" type="number" step="1" inputmode="decimal"></div>
+      <div><label>날짜</label><input id="st-date" type="date"></div>
+      <div><label>메모</label><input id="st-note"></div>
+    </div>
+    <div class="row" style="margin-top:8px"><button class="pri" onclick="app.addStock()">재고 기록 추가</button></div>
+    <h2 style="margin-top:16px">로스팅 수동 기록</h2>
+    <p class="small">로스팅 세션 타이머를 쓰지 않고 볶았을 때 투입량과 배출량만 직접 남깁니다. 남은 생두에서 자동으로 차감됩니다.</p>
+    <div class="grid">
+      <div><label>생두</label><select id="mr-bean" onchange="this.dataset.touched='1'"></select></div>
+      <div><label>날짜</label><input id="mr-date" type="date"></div>
+      <div><label>투입한 생두 (g)</label><input id="mr-weight" type="number" step="1" value="300" inputmode="decimal"></div>
+      <div><label>배출한 원두 (g)</label><input id="mr-out" type="number" step="1" inputmode="decimal"></div>
+      <div><label>메모</label><input id="mr-note"></div>
+    </div>
+    <div class="row" style="margin-top:8px"><button class="pri" onclick="app.addManualRoast()">로스팅 기록 추가</button></div>
+  </details>
   <div class="row" style="margin-bottom:10px">
     <button class="sec" onclick="app.exportCsv()">CSV 내보내기</button>
     <button class="sec" onclick="app.exportJson()">JSON 내보내기</button>
@@ -200,7 +226,7 @@ ul{margin:6px 0;padding-left:20px}
     <div class="grid">
       <div><label>방식</label><select id="b-type" onchange="app.brew()"><option value="drip">핸드드립</option><option value="esp">에스프레소</option></select></div>
       <div><label>배전도</label><select id="b-roast" onchange="app.brew()"></select></div>
-      <div><label>원두량 (g)</label><input id="b-dose" type="number" value="15" oninput="app.brew()"></div>
+      <div><label>원두량 (g)</label><input id="b-dose" type="number" value="20" oninput="app.brew()"></div>
       <div id="b-ratio-wrap"><label>비율 1:<span id="b-ratio-v">16</span></label><input id="b-ratio" type="range" min="15" max="17" step="0.5" value="16" oninput="app.brew()"></div>
     </div>
     <div id="brew-out" style="margin-top:10px"></div>
@@ -312,7 +338,7 @@ const app = {
   ],
 
   init(){
-    const tabs = [["plan","프로파일 추천"],["beans","내 생두"],["roast","로스팅 세션"],["log","배치 기록"],["diag","진단"],["brew","추출·숙성"]];
+    const tabs = [["beans","내 생두"],["plan","프로파일 추천"],["roast","로스팅 세션"],["brew","추출·숙성"],["diag","진단"],["log","배치 기록"]];
     $("tabs").innerHTML = tabs.map(([k,l]) => `<button data-t="${k}" onclick="app.tab('${k}')">${l}</button>`).join("");
     $("r-profile").innerHTML = PROFILES.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
     $("r-events").innerHTML = this.EVENTS.map(e => `<button class="${e.drop?"pri":"sec"}" id="ev-${e.k}" onclick="app.mark('${e.k}')" disabled>${e.label}</button>`).join("");
@@ -325,11 +351,11 @@ const app = {
     $("p-dens-help").textContent = "대략 0.72 이상 고밀도, 0.65 이하 저밀도.";
     this.brew(); this.ey(); this.degas(); this.cup(); this.renderLog();
     this.loadBeans(); this.renderBeans(); this.loadRepoBeans(false); this.showSuggest();
-    this.tab(location.hash.slice(1) || "plan");
+    this.tab(location.hash.slice(1) || "beans");
     window.addEventListener("resize", () => this.draw());
   },
   tab(k){
-    if(!$("t-"+k)) k = "plan";
+    if(!$("t-"+k)) k = "beans";
     document.querySelectorAll("section").forEach(s => s.classList.toggle("on", s.id === "t-"+k));
     document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.t === k));
     if(k === "roast") this.draw();
@@ -689,13 +715,32 @@ const app = {
       if(manual) this.notify("저장소에서 불러오지 못했습니다. 위의 파일 선택으로 bean.json을 불러오세요.");
     }
   },
-  toBeanBatch(b){ return {id: b.id, date: b.date, profile: b.profile, profileId: b.profileId, charge: b.charge, cold: b.cold, second: b.second, weightG: b.weight, outG: b.out, loss: b.loss, total: b.total, dev: b.dev, dtr: b.dtr, events: b.events, points: b.points, env: b.env, note: b.note, tasting: b.tasting}; },
+  toBeanBatch(b){ return {id: b.id, date: b.date, profile: b.profile, profileId: b.profileId, charge: b.charge, cold: b.cold, second: b.second, weightG: b.weight, outG: b.out, loss: b.loss, total: b.total, dev: b.dev, dtr: b.dtr, events: b.events, points: b.points, env: b.env, note: b.note, tasting: b.tasting, manual: b.manual}; },
   allBatches(bean){
     const m = new Map((bean.batches || []).map(b => [b.id, b]));
     this.load().filter(b => b.beanId === bean.id).forEach(b => m.set(b.id, this.toBeanBatch(b)));
     return [...m.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   },
-  remainingG(bean){ return Math.max(0, Math.round(bean.purchasedG - this.allBatches(bean).reduce((s, b) => s + (Number(b.weightG) || 0), 0))); },
+  // 남은 생두 = 구입량 + 입고·보정 기록 − 로스팅 투입량 합계 (저장소의 bean.stock과 이 기기의 기록을 id로 합침)
+  stockOf(bean){
+    const m = new Map((bean.stock || []).map(s => [s.id, s]));
+    this.loadStock().filter(s => s.beanId === bean.id).forEach(s => m.set(s.id, s));
+    return [...m.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id - b.id);
+  },
+  greenAdj(bean, upTo){ return this.stockOf(bean).reduce((s, e) => s + ((e.type === "green_in" || e.type === "green_adj") && (!upTo || e.date <= upTo) ? Number(e.g) || 0 : 0), 0); },
+  remainingRaw(bean){ return bean.purchasedG + this.greenAdj(bean) - this.allBatches(bean).reduce((s, b) => s + (Number(b.weightG) || 0), 0); },
+  remainingG(bean){ return Math.max(0, Math.round(this.remainingRaw(bean))); },
+  roastedG(bean){
+    const made = this.allBatches(bean).reduce((s, b) => s + (Number(b.outG) || 0), 0);
+    const used = this.stockOf(bean).reduce((s, e) => s + (e.type === "roasted_use" ? Number(e.g) || 0 : 0), 0);
+    return {made: Math.round(made), used: Math.round(used), left: Math.max(0, Math.round(made - used))};
+  },
+  // 그 배치 직후의 남은 생두
+  remainingAfter(bean, b){
+    const day = String(b.date).slice(0, 10);
+    const used = this.allBatches(bean).filter(x => String(x.date) <= String(b.date)).reduce((s, x) => s + (Number(x.weightG) || 0), 0);
+    return Math.round(bean.purchasedG + this.greenAdj(bean, day) - used);
+  },
   isConsumed(bean){ return bean.status === "consumed" || this.remainingG(bean) <= 0; },
   profileOf(bean){ return PROFILES.find(p => p.id === bean.profileId); },
   beanLevel(bean){ const p = this.profileOf(bean); return LEVELS.find(l => l.key === bean.targetLevel) || levelOf((p.loss[0] + p.loss[1]) / 2); },
@@ -703,6 +748,7 @@ const app = {
     const sel = $("r-beansel"), cur = sel.value;
     sel.innerHTML = '<option value="">(선택 안 함)</option>' + Object.values(this.beans).filter(b => !this.isConsumed(b)).map(b => `<option value="${esc(b.id)}">${esc(b.name)} · ${this.remainingG(b)}g</option>`).join("");
     sel.value = cur;
+    this.fillBeanSelects();
   },
   selBean(){
     const b = this.beans[$("r-beansel").value], hint = $("r-beanhint");
@@ -825,7 +871,8 @@ const app = {
       pricePerKg: num("nb-price"), density: num("nb-density"), moisture: num("nb-moist"), expensive, profileId,
       targetLevel: v("nb-level") || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: v("nb-notes"), batches: []};
     this.saveBeans(); this.openGuide[id] = true; this.renderBeans();
-    ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-alt","nb-density","nb-moist","nb-kg","nb-price","nb-supplier","nb-date","nb-notes"].forEach(f => { $(f).value = ""; });
+    ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-alt","nb-density","nb-moist","nb-price","nb-supplier","nb-date","nb-notes"].forEach(f => { $(f).value = ""; });
+    $("nb-kg").value = "1";
     $("nb-crop").value = "";
     $("nb-expensive").checked = false; $("nb-box").open = false;
     this.notify("등록했습니다. 아래에서 가이드를 확인하세요.");
@@ -841,7 +888,7 @@ const app = {
   },
   exportBean(id){
     const bean = this.beans[id], out = JSON.parse(JSON.stringify(bean));
-    out.batches = this.allBatches(bean);
+    out.batches = this.allBatches(bean); out.stock = this.stockOf(bean);
     if(this.isConsumed(bean)) out.status = "consumed";
     this.exportText(id.replace(/[^\w.-]/g, "_") + "-bean.json", "application/json", JSON.stringify(out, null, 2));
   },
@@ -873,8 +920,8 @@ const app = {
       ${adj.length ? "<b>이 생두 보정</b><ul>" + adj.map(t => `<li>${esc(t)}</li>`).join("") + "</ul>" : ""}
       <h2 style="margin-top:14px">핸드드립 가이드 (${lv.name} 기준)</h2>
       <table><tr><td>숙성</td><td>${dg.min}~${dg.max}일 — ${esc(dg.note || dg.label)}</td></tr>
-      <tr><td>비율</td><td>1:15~1:17 (예: 15g → 225~255g)</td></tr><tr><td>물 온도</td><td>${lv.temp}</td></tr>
-      <tr><td>분쇄도</td><td>중간~중간 가늘게 (굵은 설탕 정도)</td></tr><tr><td>뜸</td><td>원두의 2~3배 물(15g 기준 30~45g), 30~45초</td></tr>
+      <tr><td>비율</td><td>1:15~1:17 (예: 20g → 300~340g)</td></tr><tr><td>물 온도</td><td>${lv.temp}</td></tr>
+      <tr><td>분쇄도</td><td>중간~중간 가늘게 (굵은 설탕 정도)</td></tr><tr><td>뜸</td><td>원두의 2~3배 물(20g 기준 40~60g), 30~45초</td></tr>
       <tr><td>총 시간</td><td>2:30~3:30 (V60 기준)</td></tr><tr><td>목표</td><td>EY 18~22% · TDS 1.15~1.45%</td></tr></table>
       <p class="small">맛이 어긋나면 「진단」 탭에서 증상별 조정 순서를 확인하세요.</p>
       ${bean.notes ? `<p class="small">메모: ${esc(bean.notes)}</p>` : ""}
@@ -886,11 +933,11 @@ const app = {
     if(!list.length){ box.innerHTML = '<div class="card">등록된 생두가 없습니다. 위의 「생두 직접 등록」에 입력하거나, 구매 화면 캡처를 Claude에게 보내면 <code>beans/</code> 폴더에 등록해 줍니다.</div>'; return; }
     list.sort((a, b) => this.isConsumed(a) - this.isConsumed(b));
     box.innerHTML = list.map(b => {
-      const rem = this.remainingG(b), pct = Math.round(rem / b.purchasedG * 100), done = this.isConsumed(b), open = !!this.openGuide[b.id];
+      const rem = this.remainingG(b), cap = b.purchasedG + this.stockOf(b).reduce((x, e) => x + (e.type === "green_in" ? Number(e.g) || 0 : 0), 0), pct = Math.min(100, Math.round(rem / cap * 100)), rg = this.roastedG(b), done = this.isConsumed(b), open = !!this.openGuide[b.id];
       return `<div class="card" data-id="${esc(b.id)}"><div class="row" style="justify-content:space-between"><b>${esc(b.name)}</b><span class="tag">${done ? "소비 완료" : "사용 중"}</span></div>
         <div class="small">${esc(b.process)} · ${esc(b.variety)} · 배치 ${this.allBatches(b).length}회</div>
         <div style="height:8px;background:var(--line);border-radius:4px;margin:8px 0"><div style="height:8px;width:${pct}%;background:var(--accent);border-radius:4px"></div></div>
-        <div class="small">남은 양 ${rem}g / ${b.purchasedG}g (${pct}%)</div>
+        <div class="small">남은 생두 ${rem.toLocaleString("ko-KR")}g / ${cap.toLocaleString("ko-KR")}g (${pct}%) · 원두 재고 ${rg.left.toLocaleString("ko-KR")}g</div>
         ${done ? "" : this.beanSuggest(b)}
         <div class="row" style="margin-top:8px">
           <button class="sec" onclick="app.toggleGuide(this.closest('.card').dataset.id)">가이드 ${open ? "접기" : "보기"}</button>
@@ -908,18 +955,94 @@ const app = {
     return `핸드드립 ${f(d.min)} ~ ${f(d.max)}` + (lv.key === "light" || lv.key === "medlight" ? "" : ` · 에스프레소 ${f(7)} ~ ${f(14)}`);
   },
 
+  /* ---------- 재고 기록 (수동 입력) ---------- */
+  loadStock(){ try { return JSON.parse(localStorage.getItem("roast-stock") || "[]"); } catch(e){ return []; } },
+  storeStock(a){ try { localStorage.setItem("roast-stock", JSON.stringify(a)); } catch(e){ this.notify("브라우저 저장소를 사용할 수 없습니다. JSON 내보내기를 이용해 주세요."); } },
+  today(){ const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); },
+  fillBeanSelects(){
+    const list = Object.values(this.beans).sort((a, b) => this.isConsumed(a) - this.isConsumed(b));
+    const opts = list.map(b => `<option value="${esc(b.id)}">${esc(b.name)}${this.isConsumed(b) ? " (소비 완료)" : ""}</option>`).join("");
+    [["st-bean", ""], ["mr-bean", '<option value="">(생두 미지정)</option>']].forEach(([id, last]) => { const el = $(id), cur = el.value; el.innerHTML = opts + last; if(el.dataset.touched === "1" && [...el.options].some(o => o.value === cur)) el.value = cur; });
+  },
+  stockHint(){
+    $("st-g-label").textContent = {green_set: "실측한 남은 생두 (g)", green_in: "추가 입고량 (g)", green_out: "차감량 (g)", roasted_use: "사용한 원두 (g)"}[$("st-type").value];
+  },
+  addStock(){
+    const bean = this.beans[$("st-bean").value]; if(!bean) return this.notify("생두를 선택해 주세요. 목록이 비어 있으면 「내 생두」에서 먼저 등록하세요.");
+    const type = $("st-type").value, g = parseFloat($("st-g").value);
+    if(isNaN(g) || g < 0 || (type !== "green_set" && g === 0)) return this.notify("양(g)을 입력해 주세요.");
+    const note = $("st-note").value.trim();
+    let e;
+    if(type === "green_set"){
+      const diff = Math.round(g - this.remainingRaw(bean));
+      if(diff === 0) return this.notify("계산된 남은 양과 같아서 기록할 내용이 없습니다.");
+      e = {type: "green_adj", g: diff, note: (note ? note + " · " : "") + `실측 ${g}g로 맞춤`};
+    } else if(type === "green_out") e = {type: "green_adj", g: -Math.abs(g), note};
+    else if(type === "green_in") e = {type: "green_in", g: Math.abs(g), note};
+    else e = {type: "roasted_use", g: Math.abs(g), note};
+    const a = this.loadStock(); a.push({id: Date.now(), date: $("st-date").value || this.today(), beanId: bean.id, ...e}); this.storeStock(a);
+    $("st-g").value = ""; $("st-note").value = "";
+    this.renderLog(); this.renderBeans(); this.notify(`기록했습니다. ${bean.name} 남은 생두 ${this.remainingG(bean).toLocaleString("ko-KR")}g`);
+  },
+  async delStock(id){
+    if(!(await this.ask("이 재고 기록을 삭제할까요?"))) return;
+    this.storeStock(this.loadStock().filter(e => e.id !== id)); this.renderLog(); this.renderBeans();
+  },
+  async addManualRoast(){
+    const bean = this.beans[$("mr-bean").value] || null, w = parseFloat($("mr-weight").value), out = parseFloat($("mr-out").value);
+    if(!(w > 0) || !(out > 0)) return this.notify("투입한 생두와 배출한 원두의 무게(g)를 입력해 주세요.");
+    if(out >= w) return this.notify("배출 무게가 투입 무게보다 크거나 같습니다. 숫자를 확인해 주세요.");
+    if(bean && w > this.remainingG(bean) && !(await this.ask(`투입량 ${w}g이 남은 생두 ${this.remainingG(bean)}g보다 많습니다. 그래도 기록할까요?`))) return;
+    const day = $("mr-date").value || this.today();
+    const rec = {id: Date.now(), date: new Date(day + "T12:00:00").toISOString(), profile: bean ? this.profileOf(bean).name : "수동 기록", profileId: bean ? bean.profileId : null,
+      beanId: bean ? bean.id : null, charge: null, cold: false, second: false, bean: bean ? bean.name : "", env: "", note: $("mr-note").value.trim(),
+      weight: w, out, loss: (1 - out / w) * 100, total: null, dev: null, dtr: null, events: {}, points: [], tasting: "", manual: true};
+    const all = this.load(); all.push(rec); all.sort((a, b) => String(b.date).localeCompare(String(a.date))); this.store(all);
+    $("mr-out").value = ""; $("mr-note").value = "";
+    this.renderLog(); this.renderBeans();
+    this.notify(`기록했습니다. 감량률 ${rec.loss.toFixed(1)}%` + (bean ? ` · ${bean.name} 남은 생두 ${this.remainingG(bean).toLocaleString("ko-KR")}g` : ""));
+  },
+  renderStock(){
+    this.fillBeanSelects(); this.stockHint();
+    if(!$("st-date").value) $("st-date").value = this.today();
+    if(!$("mr-date").value) $("mr-date").value = this.today();
+    const fmt = n => Math.round(n).toLocaleString("ko-KR") + "g", sign = n => (n > 0 ? "+" : "−") + fmt(Math.abs(n));
+    const beans = Object.values(this.beans).sort((a, b) => this.isConsumed(a) - this.isConsumed(b));
+    const free = this.load().filter(b => !b.beanId);
+    let totalG = 0, totalR = 0, hist = [];
+    const localIds = new Set(this.loadStock().map(e => e.id));
+    const cards = beans.map(b => {
+      const st = this.stockOf(b), inG = st.filter(e => e.type === "green_in").reduce((s, e) => s + (Number(e.g) || 0), 0), adjG = st.filter(e => e.type === "green_adj").reduce((s, e) => s + (Number(e.g) || 0), 0);
+      const used = this.allBatches(b).reduce((s, x) => s + (Number(x.weightG) || 0), 0), rem = this.remainingG(b), rg = this.roastedG(b);
+      totalG += rem; totalR += rg.left; st.forEach(e => hist.push({...e, name: b.name}));
+      return `<div class="card"><div class="row" style="justify-content:space-between"><b>${esc(b.name)}</b><span class="tag">${this.isConsumed(b) ? "소비 완료" : "사용 중"}</span></div>
+        <div class="kv"><b>생두</b><span>구입 ${fmt(b.purchasedG)}${inG ? " · 입고 " + sign(inG) : ""}${adjG ? " · 보정 " + sign(adjG) : ""} · 로스팅 투입 −${fmt(used)}</span>
+        <b>남은 생두</b><span><b>${fmt(rem)}</b></span>
+        <b>원두</b><span>로스팅 결과 ${fmt(rg.made)} · 사용 −${fmt(rg.used)}</span><b>원두 재고</b><span><b>${fmt(rg.left)}</b></span></div></div>`;
+    }).join("");
+    const freeTxt = free.length ? `<div class="small">생두 미지정 로스팅 ${free.length}회: 투입 ${fmt(free.reduce((s, b) => s + (Number(b.weight) || 0), 0))} → 배출 ${fmt(free.reduce((s, b) => s + (Number(b.out) || 0), 0))}</div>` : "";
+    hist.sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.id - a.id);
+    const label = {green_in: "생두 입고", green_adj: "생두 보정", roasted_use: "원두 사용"};
+    const histHtml = hist.length ? `<div class="card"><h2>재고 기록 내역</h2><table>${hist.map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.name)}<br><span class="small">${label[e.type]} ${e.type === "roasted_use" ? "−" + fmt(e.g) : sign(e.g)}${e.note ? " · " + esc(e.note) : ""}</span></td><td>${localIds.has(e.id) ? `<button class="sec" onclick="app.delStock(${e.id})">삭제</button>` : ""}</td></tr>`).join("")}</table></div>` : "";
+    $("stock-out").innerHTML = beans.length
+      ? `<div class="card"><h2>재고 현황</h2><div class="kv"><b>남은 생두 합계</b><span><b>${fmt(totalG)}</b></span><b>원두 재고 합계</b><span><b>${fmt(totalR)}</b></span></div>${freeTxt}</div>${cards}${histHtml}`
+      : `<div class="card"><h2>재고 현황</h2>등록된 생두가 없습니다. 「내 생두」에서 먼저 등록하면 남은 생두와 원두 재고가 여기에 표시됩니다.${freeTxt}</div>`;
+  },
+
   /* ---------- 3. 배치 기록 ---------- */
   load(){ try { return JSON.parse(localStorage.getItem("roast-batches") || "[]"); } catch(e){ return []; } },
   store(a){ try { localStorage.setItem("roast-batches", JSON.stringify(a)); } catch(e){ this.notify("브라우저 저장소를 사용할 수 없습니다. JSON 내보내기를 이용해 주세요."); } },
   renderLog(){
+    this.renderStock();
     const all = this.load(), box = $("log-out");
-    if(!all.length){ box.innerHTML = '<div class="card">저장된 배치가 없습니다. 로스팅 세션에서 기록을 저장해 보세요.</div>'; return; }
+    if(!all.length){ box.innerHTML = '<div class="card">저장된 배치가 없습니다. 로스팅 세션에서 기록을 저장하거나 위의 「로스팅 수동 기록」을 이용하세요.</div>'; return; }
     box.innerHTML = all.map((b,i) => {
-      const lv = b.loss != null ? levelOf(b.loss).name : "-";
-      return `<div class="card"><div class="row" style="justify-content:space-between"><b>#${all.length-i} · ${esc(b.profile)}</b><span class="small">${esc(new Date(b.date).toLocaleString("ko-KR"))}</span></div>
-      <div class="kv"><b>생두</b><span>${esc(b.bean)||"-"}</span><b>투입/배출</b><span>${b.weight||"-"}g / ${b.out||"-"}g</span>
+      const lv = b.loss != null ? levelOf(b.loss).name : "-", bn = b.beanId ? this.beans[b.beanId] : null;
+      return `<div class="card"><div class="row" style="justify-content:space-between"><b>#${all.length-i} · ${esc(b.profile)}${b.manual ? ' <span class="tag">수동 기록</span>' : ""}</b><span class="small">${esc(new Date(b.date).toLocaleString("ko-KR"))}</span></div>
+      <div class="kv"><b>생두</b><span>${esc(b.bean)||"-"}</span><b>생두 → 원두</b><span>투입 ${b.weight||"-"}g → 배출 <b>${b.out||"-"}g</b></span>
+      ${bn ? `<b>이 배치 후 남은 생두</b><span><b>${this.remainingAfter(bn, b).toLocaleString("ko-KR")}g</b></span>` : ""}
       <b>감량률</b><span>${b.loss!=null ? b.loss.toFixed(1)+"% ("+lv+")" : "-"}</span>
-      <b>총시간/디벨롭</b><span>${mmss(b.total)} / ${b.dev!=null ? mmss(b.dev) : "-"}${b.dtr!=null ? " (DTR "+b.dtr.toFixed(1)+"%)" : ""}</span>
+      <b>총시간/디벨롭</b><span>${b.total != null ? mmss(b.total) : "-"} / ${b.dev!=null ? mmss(b.dev) : "-"}${b.dtr!=null ? " (DTR "+b.dtr.toFixed(1)+"%)" : ""}</span>
       <b>투입 온도</b><span>${b.charge != null ? b.charge + "℃" : "-"}${b.cold ? " · 겨울·바람" : ""}${b.second ? " · 연속 배치" : ""}</span>
       <b>이벤트</b><span>${Object.entries(b.events||{}).map(([k,v]) => esc((app.EVENTS.find(e=>e.k===k)||{label:k}).label)+" "+mmss(v.t)+(v.T!=null?" / "+v.T+"℃":"")).join(" · ")}</span>
       <b>환경/메모</b><span>${esc(b.env)} ${esc(b.note)}</span>
