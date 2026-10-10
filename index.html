@@ -130,14 +130,6 @@ ul{margin:6px 0;padding-left:20px}
 <!-- 내 생두 -->
 <section id="t-beans">
   <div class="card">
-    <h2>내 생두</h2>
-    <p class="small">구매한 생두의 <code>bean.json</code>을 불러옵니다. Claude가 등록한 파일은 저장소 <code>beans/</code>에 있으며, 웹 서버로 열면 자동으로 불러옵니다. <code>index.html</code>을 파일로 직접 열었다면 아래에서 파일을 선택하세요.</p>
-    <div class="row">
-      <input id="bn-file" type="file" accept=".json,application/json" multiple style="width:auto" onchange="app.importBeans(this.files)">
-      <button class="sec" onclick="app.loadRepoBeans(true)">저장소에서 불러오기</button>
-    </div>
-  </div>
-  <div class="card">
     <h2>사진·캡처로 등록</h2>
     <p class="small">구매 화면 캡처나 포장 라벨 사진을 고르면 글자를 읽어 아래 등록 폼을 채웁니다. 사진은 폰 안에서만 처리되고 어디로도 전송되지 않습니다. 처음 한 번은 인식 데이터(약 10MB)를 내려받습니다. 읽은 값은 꼭 확인하고 고쳐 주세요.</p>
     <input id="ocr-file" type="file" accept="image/*" onchange="app.ocr(this.files[0])">
@@ -171,6 +163,11 @@ ul{margin:6px 0;padding-left:20px}
     <div class="row" style="margin-top:8px"><button class="pri" onclick="app.addBean()">등록하고 가이드 보기</button></div>
   </details>
   <div id="beans-out"></div>
+  <details class="small" style="margin-top:4px">
+    <summary style="cursor:pointer">고급: bean.json 파일 불러오기</summary>
+    <p>Claude가 저장소에 등록해 준 생두 파일(<code>bean.json</code>)을 가져올 때만 사용합니다.</p>
+    <input id="bn-file" type="file" accept=".json,application/json" multiple style="width:auto" onchange="app.importBeans(this.files)">
+  </details>
 </section>
 
 <!-- 3. 배치 기록 -->
