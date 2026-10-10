@@ -267,6 +267,12 @@ const LEVELS = [
 ];
 const levelOf = loss => LEVELS.find(l => loss < l.hi) || LEVELS[LEVELS.length-1];
 
+// 내 로스터 (equipment/kaldi-wide-pop.md). baseCharge는 지식 베이스에 없는 값이라 참고용 추정치로만 쓴다.
+const ROASTER = {
+  name: "칼디 와이드 POP", batchG: 300, baseCharge: 200,
+  note: "기준 200℃는 지식 베이스의 수치가 아닙니다. 칼디 와이드 사용자들의 공개 포럼 사례(예열·투입 약 180~200℃, 1차 크랙 약 9분)를 참고한 최초 1회용 추정치이며, 이 제품의 온도계(드럼 후면판의 열풍 온도) 눈금과 같다는 보장이 없습니다. 첫 배치의 옐로우 시각으로 바로 보정하세요."
+};
+
 // 6.4 / 6.5 / 2.4 진단
 const SYMPTOMS = [
   {k:"신맛 날카로움 / 짠맛 / 여운 짧음", type:"추출", cause:"추출 부족", fix:["분쇄를 가늘게","물 온도를 올림","비율을 늘림(물 증가)","추출 시간 연장"], check:"추출을 바꿔도 풀·곡물 맛이 남으면 로스팅 언더디벨롭입니다."},
@@ -414,18 +420,46 @@ const app = {
     const rows = this.chargeRows(bean.profileId, bean), sg = this.suggestFrom(rows[rows.length - 1], this.profileOf(bean));
     return sg ? `<div class="small">다음 투입 온도 제안 <b>${sg.next}℃</b> (직전 ${sg.base}℃${sg.d ? ", " + (sg.d > 0 ? "+" : "") + sg.d + "℃" : ", 유지"})</div>` : "";
   },
+  // 기록이 없을 때 쓰는 첫 배치 시작값: 로스터 기준값 + 생두·환경 보정(지식 베이스의 방향을 5℃ 단위로 옮긴 것), 최대 ±10℃.
+  estimateCharge(o){
+    const p = PROFILES.find(x => x.id === o.profileId), parts = [];
+    const add = (v, why) => { if(v) parts.push({v, why}); };
+    add({"강": 5, "중강": 0, "중": -5}[p.power] || 0, `${p.name} 초반 화력 '${p.power}' (지식 베이스 4장)`);
+    const d = o.density, assumedHigh = p.id === "hd-washed";
+    if(d != null && !isNaN(d)){
+      if(d >= 0.72) add(assumedHigh ? 0 : 5, `밀도 ${d} 고밀도: 열을 늦게 받음`);
+      else if(d <= 0.65) add(-5, `밀도 ${d} 저밀도: 과열·스코칭 주의`);
+    }
+    const m = o.moisture;
+    if(m != null && !isNaN(m)){
+      if(m > 12) add(5, `수분 ${m}%: 건조 구간이 길어 초반 열량 필요`);
+      else if(m < 10) add(-5, `수분 ${m}%: 빨리 익을 수 있음`);
+    }
+    if(o.crop === "old") add(-5, "올드크롭: 수분이 줄어 빨리 익음");
+    if(o.cold) add(5, "겨울·바람: 같은 눈금에서도 열량이 떨어짐");
+    if(o.second) add(-5, "연속 배치: 드럼 축열");
+    const sum = parts.reduce((a, x) => a + x.v, 0), adj = Math.max(-10, Math.min(10, sum));
+    return {value: Math.round((ROASTER.baseCharge + adj) / 5) * 5, adj, parts};
+  },
+  estimateHtml(e){
+    return `<b>첫 배치 투입 온도 추정 ${e.value}℃</b> (범위 ${e.value - 5}~${e.value + 5}℃ · 기준 ${ROASTER.baseCharge}℃ ${e.adj >= 0 ? "+" : ""}${e.adj}℃)`
+      + e.parts.map(x => `<br>${x.v > 0 ? "+" : ""}${x.v}℃ ${esc(x.why)}`).join("")
+      + `<br><span class="small">${esc(ROASTER.note)}</span>`;
+  },
   showSuggest(){
     const box = $("r-suggest"), bean = this.beans[$("r-beansel").value] || null, pid = bean ? bean.profileId : $("r-profile").value;
     const p = PROFILES.find(x => x.id === pid), rows = this.chargeRows(pid, bean), sg = this.suggestFrom(rows[rows.length - 1], p);
+    const est = sg ? null : this.estimateCharge({profileId: pid, density: bean ? bean.density : null, moisture: bean ? bean.moisture : null,
+      crop: bean ? bean.crop : "", cold: $("r-cold").checked, second: $("r-second").checked});
     const ctx = [];
     if($("r-cold").checked) ctx.push("겨울·바람: 같은 눈금에서도 열량이 떨어집니다. 옐로우가 늦으면 투입 온도로 보정하세요.");
     if($("r-second").checked) ctx.push("연속 배치: 드럼 축열이 늘어납니다. 초반 화력을 약간 낮추고 옐로우 시각을 확인하세요.");
     box.innerHTML = (sg
       ? `<b>다음 투입 온도 제안 ${sg.next}℃</b> (직전 ${sg.base}℃${sg.d ? ", " + (sg.d > 0 ? "+" : "") + sg.d + "℃" : ", 유지"})<br>${esc(sg.why)}`
-      : "기준 배치가 없습니다. 예열 후 안정된 눈금으로 투입하고 투입 온도·옐로우·1차 크랙을 기록하면 다음 배치부터 제안합니다. 같은 생두로 3회 이상 볶아 기준점을 만드세요.")
+      : this.estimateHtml(est) + "<br>투입 온도·옐로우·1차 크랙을 기록하면 다음 배치부터 기록으로 제안합니다. 같은 생두로 3회 이상 볶아 기준점을 만드세요.")
       + (sg ? sg.hints.map(h => "<br>" + esc(h)).join("") : "") + ctx.map(c => "<br>" + esc(c)).join("");
     const ch = $("r-charge");
-    if(!ch.value || ch.dataset.auto === "1"){ ch.value = sg ? sg.next : ""; ch.dataset.auto = sg ? "1" : ""; }
+    if(!ch.value || ch.dataset.auto === "1"){ ch.value = sg ? sg.next : est.value; ch.dataset.auto = "1"; }
   },
 
   /* ---------- 2. 로스팅 세션 ---------- */
@@ -813,6 +847,7 @@ const app = {
   },
   guideHtml(bean){
     const p = this.profileOf(bean), lv = this.beanLevel(bean), o = bean.origin || {};
+    const ce = this.estimateCharge({profileId: bean.profileId, density: bean.density, moisture: bean.moisture, crop: bean.crop});
     const rng = a => `${mmss(a[0])} ~ ${mmss(a[1])}`;
     const auto = this.tips({density: bean.density, moist: bean.moisture, crop: bean.crop, expensive: bean.expensive, process: bean.process, kind: bean.profileId === "yemen" ? "yemen" : ""});
     const adj = [...(bean.adjustments || [])]; auto.forEach(t => { if(!adj.includes(t)) adj.push(t); });
@@ -830,7 +865,9 @@ const app = {
       <table><tr><td>옐로우</td><td>${rng(p.yellow)}</td></tr><tr><td>1차 크랙</td><td>${rng(p.c1)}</td></tr>
       <tr><td>디벨롭</td><td>${rng(p.dev)} (DTR 약 ${p.dtr[0]}~${p.dtr[1]}%)</td></tr>
       <tr><td>목표 배전도</td><td>${lv.name} — 감량 ${lv.lo}~${lv.hi > 25 ? "" : lv.hi}%${lv.hi > 25 ? " 이상" : ""} · ${esc(lv.use)}</td></tr>
-      <tr><td>프로파일 감량</td><td>${p.loss[0]}~${p.loss[1]}%</td></tr></table>
+      <tr><td>프로파일 감량</td><td>${p.loss[0]}~${p.loss[1]}%</td></tr>
+      <tr><td>첫 배치 투입 온도 (추정)</td><td><b>${ce.value}℃</b> (${ce.value - 5}~${ce.value + 5}℃, ${esc(ROASTER.name)} 온도계 눈금 기준)</td></tr></table>
+      <ul class="small">${ce.parts.map(x => `<li>${x.v > 0 ? "+" : ""}${x.v}℃ ${esc(x.why)}</li>`).join("")}<li>${esc(ROASTER.note)}</li></ul>
       <p>${esc(p.note)}</p>
       ${(bean.batchPlan || []).length ? "<b>배치 계획</b><ol>" + bean.batchPlan.map(s => `<li>${esc(s.label)} · ${s.weightG}g${s.lossTarget ? ` · 감량 ${s.lossTarget[0]}~${s.lossTarget[1]}%` : ""}${s.note ? " — " + esc(s.note) : ""}</li>`).join("") + "</ol>" : ""}
       ${adj.length ? "<b>이 생두 보정</b><ul>" + adj.map(t => `<li>${esc(t)}</li>`).join("") + "</ul>" : ""}
