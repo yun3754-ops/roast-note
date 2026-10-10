@@ -686,15 +686,23 @@ const app = {
   },
 
   /* ---------- 내 생두 ---------- */
-  beans: {}, openGuide: {},
-  loadBeans(){ try { this.beans = JSON.parse(localStorage.getItem("roast-beans") || "{}"); } catch(e){ this.beans = {}; } },
+  beans: {}, openGuide: {}, editing: null, edits: {},
+  loadBeans(){
+    try { this.beans = JSON.parse(localStorage.getItem("roast-beans") || "{}"); } catch(e){ this.beans = {}; }
+    try { this.edits = JSON.parse(localStorage.getItem("roast-bean-edits") || "{}"); } catch(e){ this.edits = {}; }
+  },
+  saveEdits(){ try { localStorage.setItem("roast-bean-edits", JSON.stringify(this.edits)); } catch(e){} },
+  applyEdits(b){ const e = this.edits[b.id]; if(e) Object.assign(b, e); return b; },
+  // 저장소(bean.json)에서 온 기록을 이 기기에서 지운 경우를 기억한다 ("b:"=배치, "s:"=재고)
+  tomb(){ try { return new Set(JSON.parse(localStorage.getItem("roast-deleted") || "[]")); } catch(e){ return new Set(); } },
+  addTomb(key){ const t = this.tomb(); t.add(key); try { localStorage.setItem("roast-deleted", JSON.stringify([...t])); } catch(e){} },
   saveBeans(){ try { localStorage.setItem("roast-beans", JSON.stringify(this.beans)); } catch(e){} },
   validBean(b){ return !!b && typeof b === "object" && typeof b.id === "string" && b.id !== "" && typeof b.name === "string" && PROFILES.some(p => p.id === b.profileId) && Number(b.purchasedG) > 0; },
   importBeans(files){
     [...files].forEach(f => f.text().then(t => {
       try {
         [].concat(JSON.parse(t)).forEach(b => {
-          if(this.validBean(b)) this.beans[b.id] = b;
+          if(this.validBean(b)) this.beans[b.id] = this.applyEdits(b);
           else this.notify(f.name + ": bean.json 형식이 올바르지 않습니다 (id, name, profileId, purchasedG 필요).");
         });
         this.saveBeans(); this.renderBeans();
@@ -707,7 +715,7 @@ const app = {
       const idx = await (await fetch("beans/index.json", {cache: "no-store"})).json();
       for(const id of idx.beans || []){
         const b = await (await fetch("beans/" + encodeURIComponent(id) + "/bean.json", {cache: "no-store"})).json();
-        if(this.validBean(b)) this.beans[b.id] = b;
+        if(this.validBean(b)) this.beans[b.id] = this.applyEdits(b);
       }
       this.saveBeans(); this.renderBeans();
       if(manual) this.notify(`저장소의 생두 ${(idx.beans || []).length}종을 불러왔습니다.`);
@@ -717,14 +725,16 @@ const app = {
   },
   toBeanBatch(b){ return {id: b.id, date: b.date, profile: b.profile, profileId: b.profileId, charge: b.charge, cold: b.cold, second: b.second, weightG: b.weight, outG: b.out, loss: b.loss, total: b.total, dev: b.dev, dtr: b.dtr, events: b.events, points: b.points, env: b.env, note: b.note, tasting: b.tasting, manual: b.manual}; },
   allBatches(bean){
-    const m = new Map((bean.batches || []).map(b => [b.id, b]));
-    this.load().filter(b => b.beanId === bean.id).forEach(b => m.set(b.id, this.toBeanBatch(b)));
+    const tomb = this.tomb(), local = this.load(), lm = new Map(local.map(b => [b.id, b]));
+    const m = new Map((bean.batches || []).filter(b => !tomb.has("b:" + b.id) && !(lm.has(b.id) && lm.get(b.id).beanId !== bean.id)).map(b => [b.id, b]));
+    local.filter(b => b.beanId === bean.id && !tomb.has("b:" + b.id)).forEach(b => m.set(b.id, this.toBeanBatch(b)));
     return [...m.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
   },
   // 남은 생두 = 구입량 + 입고·보정 기록 − 로스팅 투입량 합계 (저장소의 bean.stock과 이 기기의 기록을 id로 합침)
   stockOf(bean){
-    const m = new Map((bean.stock || []).map(s => [s.id, s]));
-    this.loadStock().filter(s => s.beanId === bean.id).forEach(s => m.set(s.id, s));
+    const tomb = this.tomb(), local = this.loadStock(), lm = new Map(local.map(s => [s.id, s]));
+    const m = new Map((bean.stock || []).filter(s => !tomb.has("s:" + s.id) && !(lm.has(s.id) && lm.get(s.id).beanId !== bean.id)).map(s => [s.id, s]));
+    local.filter(s => s.beanId === bean.id && !tomb.has("s:" + s.id)).forEach(s => m.set(s.id, s));
     return [...m.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id - b.id);
   },
   greenAdj(bean, upTo){ return this.stockOf(bean).reduce((s, e) => s + ((e.type === "green_in" || e.type === "green_adj") && (!upTo || e.date <= upTo) ? Number(e.g) || 0 : 0), 0); },
@@ -943,7 +953,9 @@ const app = {
           <button class="sec" onclick="app.toggleGuide(this.closest('.card').dataset.id)">가이드 ${open ? "접기" : "보기"}</button>
           ${done ? "" : `<button class="pri" onclick="app.roastBean(this.closest('.card').dataset.id)">이 생두로 로스팅</button><button class="sec" onclick="app.markConsumed(this.closest('.card').dataset.id)">소비 완료 처리</button>`}
           <button class="sec" onclick="app.exportBean(this.closest('.card').dataset.id)">기록 포함 JSON 내보내기</button>
+          <button class="sec" onclick="app.edit('bean', this.closest('.card').dataset.id)">정보 수정</button>
           <button class="sec" onclick="app.delBean(this.closest('.card').dataset.id)">삭제</button></div>
+        ${this.editing && this.editing.kind === "bean" && this.editing.id === b.id ? this.beanEditHtml(b) : ""}
         ${open ? this.guideHtml(b) : ""}</div>`;
     }).join("");
   },
@@ -986,7 +998,7 @@ const app = {
   },
   async delStock(id){
     if(!(await this.ask("이 재고 기록을 삭제할까요?"))) return;
-    this.storeStock(this.loadStock().filter(e => e.id !== id)); this.renderLog(); this.renderBeans();
+    this.storeStock(this.loadStock().filter(e => e.id !== id)); this.addTomb("s:" + id); this.renderLog(); this.renderBeans();
   },
   async addManualRoast(){
     const bean = this.beans[$("mr-bean").value] || null, w = parseFloat($("mr-weight").value), out = parseFloat($("mr-out").value);
@@ -1023,7 +1035,8 @@ const app = {
     const freeTxt = free.length ? `<div class="small">생두 미지정 로스팅 ${free.length}회: 투입 ${fmt(free.reduce((s, b) => s + (Number(b.weight) || 0), 0))} → 배출 ${fmt(free.reduce((s, b) => s + (Number(b.out) || 0), 0))}</div>` : "";
     hist.sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.id - a.id);
     const label = {green_in: "생두 입고", green_adj: "생두 보정", roasted_use: "원두 사용"};
-    const histHtml = hist.length ? `<div class="card"><h2>재고 기록 내역</h2><table>${hist.map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.name)}<br><span class="small">${label[e.type]} ${e.type === "roasted_use" ? "−" + fmt(e.g) : sign(e.g)}${e.note ? " · " + esc(e.note) : ""}</span></td><td>${localIds.has(e.id) ? `<button class="sec" onclick="app.delStock(${e.id})">삭제</button>` : ""}</td></tr>`).join("")}</table></div>` : "";
+    const ed = this.editing && this.editing.kind === "stock" ? hist.find(e => e.id === this.editing.id) : null;
+    const histHtml = (ed ? this.stockEditHtml(ed) : "") + (hist.length ? `<div class="card"><h2>재고 기록 내역</h2><table>${hist.map(e => `<tr><td>${esc(e.date)}</td><td>${esc(e.name)}<br><span class="small">${label[e.type]} ${e.type === "roasted_use" ? "−" + fmt(e.g) : sign(e.g)}${e.note ? " · " + esc(e.note) : ""}</span></td><td><button class="sec" onclick="app.edit('stock', ${e.id})">수정</button> <button class="sec" onclick="app.delStock(${e.id})">삭제</button></td></tr>`).join("")}</table></div>` : "");
     $("stock-out").innerHTML = beans.length
       ? `<div class="card"><h2>재고 현황</h2><div class="kv"><b>남은 생두 합계</b><span><b>${fmt(totalG)}</b></span><b>원두 재고 합계</b><span><b>${fmt(totalR)}</b></span></div>${freeTxt}</div>${cards}${histHtml}`
       : `<div class="card"><h2>재고 현황</h2>등록된 생두가 없습니다. 「내 생두」에서 먼저 등록하면 남은 생두와 원두 재고가 여기에 표시됩니다.${freeTxt}</div>`;
@@ -1032,11 +1045,105 @@ const app = {
   /* ---------- 3. 배치 기록 ---------- */
   load(){ try { return JSON.parse(localStorage.getItem("roast-batches") || "[]"); } catch(e){ return []; } },
   store(a){ try { localStorage.setItem("roast-batches", JSON.stringify(a)); } catch(e){ this.notify("브라우저 저장소를 사용할 수 없습니다. JSON 내보내기를 이용해 주세요."); } },
+  dayOf(iso){ const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); },
+  // 저장소(bean.json)에 있는 배치도 기록 목록에 보이도록 앱의 배치 형식으로 바꾼다
+  fromBeanBatch(bean, b){
+    return {id: b.id, date: b.date, profile: b.profile || this.profileOf(bean).name, profileId: b.profileId || bean.profileId, beanId: bean.id, bean: bean.name,
+      charge: b.charge ?? null, cold: !!b.cold, second: !!b.second, env: b.env || "", note: b.note || "", weight: b.weightG, out: b.outG ?? null, loss: b.loss ?? null,
+      total: b.total ?? null, dev: b.dev ?? null, dtr: b.dtr ?? null, events: b.events || {}, points: b.points || [], tasting: b.tasting || "", manual: !!b.manual, fromRepo: true};
+  },
+  logList(){
+    const tomb = this.tomb(), local = this.load(), ids = new Set(local.map(b => b.id)), extra = [];
+    Object.values(this.beans).forEach(bean => (bean.batches || []).forEach(b => {
+      if(!ids.has(b.id) && !tomb.has("b:" + b.id)){ ids.add(b.id); extra.push(this.fromBeanBatch(bean, b)); }
+    }));
+    return [...local, ...extra].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  },
+  findBatch(id){ return this.logList().find(b => b.id === id); },
+  upsertBatch(rec){
+    const a = this.load(), i = a.findIndex(b => b.id === rec.id); if(i >= 0) a[i] = rec; else a.push(rec);
+    a.sort((x, y) => String(y.date).localeCompare(String(x.date))); this.store(a);
+  },
+  edit(kind, id){
+    this.editing = {kind, id}; this.renderLog(); this.renderBeans();
+    setTimeout(() => { const el = document.querySelector('[data-editing="1"]'); if(el) el.scrollIntoView({block: "center", behavior: "smooth"}); }, 50);
+  },
+  cancelEdit(){ this.editing = null; this.renderLog(); this.renderBeans(); },
+  batchEditHtml(b){
+    const opts = Object.values(this.beans).map(x => `<option value="${esc(x.id)}" ${x.id === b.beanId ? "selected" : ""}>${esc(x.name)}</option>`).join("") + `<option value="" ${b.beanId ? "" : "selected"}>(생두 미지정)</option>`;
+    return `<div class="card" data-editing="1"><b>배치 수정</b> <span class="small">저장하면 남은 생두와 원두 재고가 다시 계산됩니다.</span><div class="grid" style="margin-top:8px">
+      <div><label>생두</label><select class="ed-bean">${opts}</select></div>
+      <div><label>날짜</label><input class="ed-date" type="date" value="${this.dayOf(b.date)}"></div>
+      <div><label>투입한 생두 (g)</label><input class="ed-weight" type="number" value="${b.weight ?? ""}"></div>
+      <div><label>배출한 원두 (g)</label><input class="ed-out" type="number" value="${b.out ?? ""}"></div>
+      <div><label>투입 온도 (℃)</label><input class="ed-charge" type="number" value="${b.charge ?? ""}"></div>
+      <div><label>메모</label><input class="ed-note" value="${esc(b.note)}"></div></div>
+      <div class="row" style="margin-top:8px"><button class="pri" onclick="app.saveBatchEdit(${b.id}, this)">저장</button><button class="sec" onclick="app.cancelEdit()">취소</button></div></div>`;
+  },
+  saveBatchEdit(id, btn){
+    const card = btn.closest(".card"), q = s => card.querySelector(s).value, b = this.findBatch(id); if(!b) return;
+    const w = parseFloat(q(".ed-weight")), out = parseFloat(q(".ed-out")), ch = parseFloat(q(".ed-charge"));
+    if(!(w > 0)) return this.notify("투입한 생두(g)를 입력해 주세요.");
+    if(out > 0 && out >= w) return this.notify("배출 무게가 투입 무게보다 크거나 같습니다. 숫자를 확인해 주세요.");
+    const bean = this.beans[q(".ed-bean")] || null, day = q(".ed-date") || this.dayOf(b.date);
+    b.beanId = bean ? bean.id : null; b.bean = bean ? bean.name : "";
+    if(bean && b.manual){ b.profile = this.profileOf(bean).name; b.profileId = bean.profileId; }
+    b.weight = w; b.out = out > 0 ? out : null; b.loss = out > 0 ? (1 - out / w) * 100 : null;
+    b.charge = isNaN(ch) ? null : ch; b.note = q(".ed-note").trim();
+    if(day !== this.dayOf(b.date)) b.date = new Date(day + "T12:00:00").toISOString();
+    delete b.fromRepo; this.upsertBatch(b); this.editing = null; this.renderLog(); this.renderBeans();
+    this.notify("수정했습니다." + (bean ? ` ${bean.name} 남은 생두 ${this.remainingG(bean).toLocaleString("ko-KR")}g` : ""));
+  },
+  stockEditHtml(e){
+    const opts = Object.values(this.beans).map(x => `<option value="${esc(x.id)}" ${x.id === e.beanId ? "selected" : ""}>${esc(x.name)}</option>`).join("");
+    const types = [["green_in", "생두 입고 (+)"], ["green_adj", "생두 보정 (양수 +, 음수 −)"], ["roasted_use", "원두 사용 (−)"]].map(([k, l]) => `<option value="${k}" ${k === e.type ? "selected" : ""}>${l}</option>`).join("");
+    return `<div class="card" data-editing="1"><b>재고 기록 수정</b><div class="grid" style="margin-top:8px">
+      <div><label>생두</label><select class="ed-bean">${opts}</select></div><div><label>종류</label><select class="ed-type">${types}</select></div>
+      <div><label>양 (g)</label><input class="ed-g" type="number" value="${e.g}"></div><div><label>날짜</label><input class="ed-date" type="date" value="${esc(e.date)}"></div>
+      <div><label>메모</label><input class="ed-note" value="${esc(e.note || "")}"></div></div>
+      <div class="row" style="margin-top:8px"><button class="pri" onclick="app.saveStockEdit(${e.id}, this)">저장</button><button class="sec" onclick="app.cancelEdit()">취소</button></div></div>`;
+  },
+  saveStockEdit(id, btn){
+    const card = btn.closest(".card"), q = s => card.querySelector(s).value, bean = this.beans[q(".ed-bean")];
+    const g = parseFloat(q(".ed-g")), type = q(".ed-type");
+    if(!bean) return this.notify("생두를 선택해 주세요.");
+    if(isNaN(g) || g === 0) return this.notify("양(g)을 입력해 주세요.");
+    const rec = {id, date: q(".ed-date") || this.today(), beanId: bean.id, type, g: type === "green_adj" ? g : Math.abs(g), note: q(".ed-note").trim()};
+    const a = this.loadStock(), i = a.findIndex(x => x.id === id); if(i >= 0) a[i] = rec; else a.push(rec); this.storeStock(a);
+    this.editing = null; this.renderLog(); this.renderBeans();
+    this.notify(`수정했습니다. ${bean.name} 남은 생두 ${this.remainingG(bean).toLocaleString("ko-KR")}g`);
+  },
+  beanEditHtml(b){
+    const sel = (v, cur) => v === (cur || "") ? "selected" : "";
+    return `<div class="card" data-editing="1" style="margin-top:10px"><b>생두 정보 수정</b> <span class="small">구입량을 바꾸면 남은 생두가 다시 계산됩니다.</span><div class="grid" style="margin-top:8px">
+      <div><label>이름</label><input class="ed-name" value="${esc(b.name)}"></div>
+      <div><label>구입량 (kg)</label><input class="ed-kg" type="number" step="0.1" value="${b.purchasedG / 1000}"></div>
+      <div><label>kg당 가격 (원)</label><input class="ed-price" type="number" value="${b.pricePerKg ?? ""}"></div>
+      <div><label>구입처</label><input class="ed-supplier" value="${esc(b.supplier || "")}"></div>
+      <div><label>구입일</label><input class="ed-pdate" type="date" value="${esc(b.purchasedAt || "")}"></div>
+      <div><label>밀도 (g/ml)</label><input class="ed-density" type="number" step="0.01" value="${b.density ?? ""}"></div>
+      <div><label>수분 (%)</label><input class="ed-moist" type="number" step="0.1" value="${b.moisture ?? ""}"></div>
+      <div><label>수확연도</label><select class="ed-crop"><option value="" ${sel("", b.crop)}>미확인</option><option value="new" ${sel("new", b.crop)}>뉴크롭</option><option value="old" ${sel("old", b.crop)}>올드크롭</option></select></div>
+      <div><label>상태</label><select class="ed-status"><option value="active" ${sel("active", b.status === "consumed" ? "consumed" : "active")}>사용 중</option><option value="consumed" ${sel("consumed", b.status)}>소비 완료</option></select></div></div>
+      <div class="row" style="margin-top:8px"><button class="pri" onclick="app.saveBeanEdit(this)">저장</button><button class="sec" onclick="app.cancelEdit()">취소</button></div></div>`;
+  },
+  saveBeanEdit(btn){
+    const outer = btn.closest("[data-id]"), q = s => outer.querySelector(s).value, b = this.beans[outer.dataset.id], kg = parseFloat(q(".ed-kg"));
+    if(!b) return;
+    if(!q(".ed-name").trim()) return this.notify("이름을 입력해 주세요.");
+    if(!(kg > 0)) return this.notify("구입량(kg)을 입력해 주세요.");
+    const num = sel => { const x = parseFloat(q(sel)); return isNaN(x) ? null : x; };
+    const e = {name: q(".ed-name").trim(), purchasedG: Math.round(kg * 1000), pricePerKg: num(".ed-price"), supplier: q(".ed-supplier").trim(), purchasedAt: q(".ed-pdate") || b.purchasedAt,
+      density: num(".ed-density"), moisture: num(".ed-moist"), crop: q(".ed-crop"), status: q(".ed-status")};
+    Object.assign(b, e); this.edits[b.id] = e; this.saveEdits(); this.saveBeans();
+    this.editing = null; this.renderBeans(); this.renderLog(); this.notify("수정했습니다.");
+  },
   renderLog(){
     this.renderStock();
-    const all = this.load(), box = $("log-out");
+    const all = this.logList(), box = $("log-out");
     if(!all.length){ box.innerHTML = '<div class="card">저장된 배치가 없습니다. 로스팅 세션에서 기록을 저장하거나 위의 「로스팅 수동 기록」을 이용하세요.</div>'; return; }
     box.innerHTML = all.map((b,i) => {
+      if(this.editing && this.editing.kind === "batch" && this.editing.id === b.id) return this.batchEditHtml(b);
       const lv = b.loss != null ? levelOf(b.loss).name : "-", bn = b.beanId ? this.beans[b.beanId] : null;
       return `<div class="card"><div class="row" style="justify-content:space-between"><b>#${all.length-i} · ${esc(b.profile)}${b.manual ? ' <span class="tag">수동 기록</span>' : ""}</b><span class="small">${esc(new Date(b.date).toLocaleString("ko-KR"))}</span></div>
       <div class="kv"><b>생두</b><span>${esc(b.bean)||"-"}</span><b>생두 → 원두</b><span>투입 ${b.weight||"-"}g → 배출 <b>${b.out||"-"}g</b></span>
@@ -1049,11 +1156,13 @@ const app = {
       <b>숙성 기준</b><span>${this.readyRange(b)}</span></div>
       <label style="margin-top:8px">숙성 후 평가 (추출 레시피, 향/산미/단맛/바디/여운, 점수, 다음 배치 변경점 1~2개)</label>
       <textarea rows="2" onchange="app.setTasting(${b.id}, this.value)">${esc(b.tasting)}</textarea>
-      <button class="sec" style="margin-top:6px" onclick="app.del(${b.id})">삭제</button></div>`;
+      <div class="row" style="margin-top:6px"><button class="sec" onclick="app.edit('batch', ${b.id})">수정</button><button class="sec" onclick="app.del(${b.id})">삭제</button></div></div>`;
     }).join("");
   },
-  setTasting(id, v){ const a = this.load(); const b = a.find(x => x.id === id); if(b){ b.tasting = v; this.store(a); } },
-  async del(id){ if(await this.ask("이 배치를 삭제할까요?")){ this.store(this.load().filter(b => b.id !== id)); this.renderLog(); } },
+  setTasting(id, v){ const b = this.findBatch(id); if(b){ b.tasting = v; delete b.fromRepo; this.upsertBatch(b); } },
+  async del(id){
+    if(await this.ask("이 배치를 삭제할까요? 남은 생두와 원두 재고가 다시 계산됩니다.")){ this.store(this.load().filter(b => b.id !== id)); this.addTomb("b:" + id); this.renderLog(); this.renderBeans(); }
+  },
   /* 화면 안 알림·확인·내보내기 창 (링크로 열린 페이지에서는 alert/confirm/다운로드가 막혀 있음) */
   toastT: null,
   notify(msg){ const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(this.toastT); this.toastT = setTimeout(() => { t.hidden = true; }, 5000); },
@@ -1080,11 +1189,11 @@ const app = {
       ["닫기", true]
     ], text);
   },
-  exportJson(){ this.exportText("roast-batches.json", "application/json", JSON.stringify(this.load(), null, 2)); },
+  exportJson(){ this.exportText("roast-batches.json", "application/json", JSON.stringify(this.logList(), null, 2)); },
   exportCsv(){
     const q = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
     const head = ["날짜","프로파일","생두","투입(g)","배출(g)","감량률(%)","총시간(초)","디벨롭(초)","DTR(%)","환경","메모","평가"];
-    const rows = this.load().map(b => [b.date,b.profile,b.bean,b.weight,b.out,b.loss!=null?b.loss.toFixed(1):"",b.total,b.dev,b.dtr!=null?b.dtr.toFixed(1):"",b.env,b.note,b.tasting].map(q).join(","));
+    const rows = this.logList().map(b => [b.date,b.profile,b.bean,b.weight,b.out,b.loss!=null?b.loss.toFixed(1):"",b.total,b.dev,b.dtr!=null?b.dtr.toFixed(1):"",b.env,b.note,b.tasting].map(q).join(","));
     this.exportText("roast-batches.csv", "text/csv", "﻿" + [head.map(q).join(","), ...rows].join("\n"));
   },
 
