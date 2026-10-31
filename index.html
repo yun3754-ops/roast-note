@@ -176,7 +176,9 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>kg당 가격 (원)</label><input id="nb-price" type="number"></div>
       <div><label>구입처</label><input id="nb-supplier" list="supplier-list"><datalist id="supplier-list"><option value="세웅지씨"><option value="커피리브레"></datalist></div>
       <div><label>구입일</label><input id="nb-date" type="date"></div>
-      <div><label>목표 배전도</label><select id="nb-level"><option value="">프로파일 기본값</option></select></div>
+      <div><label>판매처 추천 로스팅 (밝은 쪽)</label><select id="nb-sr-from" class="sr-sel" onchange="app.nbLevelHint()"></select></div>
+      <div><label>판매처 추천 로스팅 (어두운 쪽)</label><select id="nb-sr-to" class="sr-sel" onchange="app.nbLevelHint()"></select></div>
+      <div><label>목표 배전도</label><select id="nb-level"><option value="">자동 (추천 구간 가운데 / 프로파일 기본)</option></select><div class="small" id="nb-level-hint"></div></div>
     </div>
     <label style="margin-top:10px">컵 노트</label><input id="nb-cup" placeholder="예: 살구, 믹스베리, 포도, 베르가못">
     <label style="margin-top:10px">메모</label><textarea id="nb-notes" rows="2"></textarea>
@@ -341,6 +343,11 @@ const LEVELS = [
   {key:"dark", name:"다크(강)", lo:17.5, hi:30, use:"강배전 블렌드", temp:"85~90℃", dtr:[20,25]}
 ];
 const levelOf = loss => LEVELS.find(l => loss < l.hi) || LEVELS[LEVELS.length-1];
+// 2.3장 「대략적 지점」: 배전도별 배출 시점의 감각 신호
+const LEVEL_POINT = {light: "1차 크랙 중반~종료 직후", medlight: "1차 크랙 종료 후 짧은 발현", medium: "1차 크랙 종료 후 충분한 발현", meddark: "2차 크랙 직전", dark: "2차 크랙 진입"};
+// 판매처 추천 로스팅 포인트(세웅지씨 로스팅 팔레트 9단계, 커피리브레 약~강) → 2.3장 배전도. 8장: 추천 포인트는 로스팅 목표의 출발점.
+// 2.3장 표의 영문 이름(Medium-Light, Medium-Dark)이 같은 단계끼리 잇고, 지식 베이스보다 밝은 Extra·Very Light는 라이트, Very·Extra Dark는 다크로 묶는다.
+const SROAST = [["Extra Light","light"],["Very Light","light"],["Light","light"],["Medium Light","medlight"],["Medium","medium"],["Medium Dark","meddark"],["Dark","dark"],["Very Dark","dark"],["Extra Dark","dark"]];
 
 // 내 로스터 (equipment/kaldi-wide-pop.md). baseCharge는 지식 베이스에 없는 값이라 참고용 추정치로만 쓴다.
 const ROASTER = {
@@ -398,6 +405,7 @@ const app = {
     $("defect-table").innerHTML = "<tr><th>결점</th><th>원인</th><th>맛</th><th>대응</th></tr>" + DEFECTS.map(d => "<tr>"+d.map(c=>`<td>${c}</td>`).join("")+"</tr>").join("");
     $("b-roast").innerHTML = LEVELS.map(l => `<option value="${l.key}" ${l.key==="medlight"?"selected":""}>${l.name}</option>`).join("");
     $("nb-level").innerHTML += LEVELS.map(l => `<option value="${l.key}">${l.name}</option>`).join("");
+    document.querySelectorAll(".sr-sel").forEach(s => { s.innerHTML = this.srOptions(""); });
     $("g-use").innerHTML = Object.entries(DEGAS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join("");
     $("g-date").value = new Date().toISOString().slice(0,10);
     $("p-dens-help").textContent = "대략 0.72 이상 고밀도, 0.65 이하 저밀도.";
@@ -780,7 +788,7 @@ const app = {
       if(manual) this.notify("저장소에서 불러오지 못했습니다. 위의 파일 선택으로 bean.json을 불러오세요.");
     }
   },
-  toBeanBatch(b){ return {id: b.id, date: b.date, profile: b.profile, profileId: b.profileId, charge: b.charge, cold: b.cold, second: b.second, weightG: b.weight, outG: b.out, loss: b.loss, total: b.total, dev: b.dev, dtr: b.dtr, events: b.events, points: b.points, env: b.env, note: b.note, tasting: b.tasting, manual: b.manual}; },
+  toBeanBatch(b){ return {id: b.id, date: b.date, profile: b.profile, profileId: b.profileId, charge: b.charge, cold: b.cold, second: b.second, weightG: b.weight, outG: b.out, loss: b.loss, total: b.total, dev: b.dev, dtr: b.dtr, events: b.events, points: b.points, env: b.env, note: b.note, tasting: b.tasting, manual: b.manual, heat: b.heat, targetLevel: b.targetLevel, targetLoss: b.targetLoss}; },
   allBatches(bean){
     const tomb = this.tomb(), local = this.load(), lm = new Map(local.map(b => [b.id, b]));
     const m = new Map((bean.batches || []).filter(b => !tomb.has("b:" + b.id) && !(lm.has(b.id) && lm.get(b.id).beanId !== bean.id)).map(b => [b.id, b]));
@@ -811,6 +819,41 @@ const app = {
   isConsumed(bean){ return bean.status === "consumed" || this.remainingG(bean) <= 0; },
   profileOf(bean){ return PROFILES.find(p => p.id === bean.profileId); },
   beanLevel(bean){ const p = this.profileOf(bean); return LEVELS.find(l => l.key === bean.targetLevel) || levelOf((p.loss[0] + p.loss[1]) / 2); },
+  lvName(key){ return (LEVELS.find(l => l.key === key) || {}).name || key; },
+  /* ---------- 판매처 추천 로스팅 포인트 → 목표 배전도 ---------- */
+  // "Very Light ~ Medium Light", "약 - 중약" → {from, to}
+  sellerRoastOf(s){
+    const ko = {"약": "Light", "중약": "Medium Light", "중": "Medium", "중강": "Medium Dark", "강": "Dark"}, key = x => x.toLowerCase().replace(/[^a-z]/g, "");
+    const names = String(s || "").replace(/(medium|very|extra)\s*-\s*(light|dark)/gi, "$1 $2").split(/\s*[~～\-–]\s*/).map(x => {
+      const k = x.trim().replace(/배전$/, ""), e = SROAST.find(([n]) => key(n) === key(k) && key(k));
+      return e ? e[0] : ko[k] || null;
+    }).filter(Boolean);
+    return names.length ? {from: names[0], to: names[names.length - 1]} : null;
+  },
+  sellerLevels(sr){
+    if(!sr) return [];
+    const i = SROAST.findIndex(x => x[0] === sr.from), j = SROAST.findIndex(x => x[0] === (sr.to || sr.from));
+    if(i < 0 || j < 0) return [];
+    return [...new Set(SROAST.slice(Math.min(i, j), Math.max(i, j) + 1).map(x => x[1]))];
+  },
+  srOptions(cur){ return `<option value="">모름</option>` + SROAST.map(([n, k]) => `<option value="${n}" ${n === cur ? "selected" : ""}>${n} (${this.lvName(k)})</option>`).join(""); },
+  srFrom(fromSel, toSel){ const f = fromSel.value, t = toSel.value; return f || t ? {from: f || t, to: t || f} : null; },
+  nbLevelHint(){
+    const sr = this.srFrom($("nb-sr-from"), $("nb-sr-to"));
+    $("nb-level-hint").textContent = sr ? `추천 ${this.sellerText(sr)} · 자동이면 ${this.lvName(this.sellerDefault(sr))}` : "";
+  },
+  sellerText(sr){ if(!sr) return ""; const L = this.sellerLevels(sr); return (sr.to && sr.to !== sr.from ? `${sr.from} ~ ${sr.to}` : sr.from) + (L.length ? ` → ${L.map(k => this.lvName(k)).join("·")}` : ""); },
+  // 추천 구간의 가운데(짝수 개면 밝은 쪽)를 시작 목표로
+  sellerDefault(sr){ const L = this.sellerLevels(sr); return L.length ? L[Math.floor((L.length - 1) / 2)] : ""; },
+  profileLevel(p){ return levelOf((p.loss[0] + p.loss[1]) / 2).key; },
+  levelLoss(key){ const lv = LEVELS.find(l => l.key === key); return [lv.lo, lv.hi]; },
+  // 배출 기준: 목표 배전도가 프로파일 기본과 같으면 4장의 디벨롭 시간, 다르면 2.1장 DTR(LEVELS.dtr)을 1차 크랙 시각에 적용
+  devTarget(p, key, c1){
+    if(!key || key === this.profileLevel(p)) return {dev: p.dev, why: `프로파일 디벨롭 (지식 베이스 4장)`};
+    const lv = LEVELS.find(l => l.key === key), f = (t, d) => Math.round(t * d / (100 - d)), c = [].concat(c1);
+    return {dev: [f(c[0], lv.dtr[0]), f(c[c.length - 1], lv.dtr[1])], why: `${lv.name} DTR ${lv.dtr[0]}~${lv.dtr[1]}% (지식 베이스 2.1)`};
+  },
+  outText(w, loss){ const g = n => Math.round(n).toLocaleString("ko-KR") + "g"; return loss[1] > 25 ? `${g(w * (1 - loss[0] / 100))} 이하 (감량 ${loss[0]}% 이상)` : `${g(w * (1 - loss[1] / 100))}~${g(w * (1 - loss[0] / 100))} (감량 ${loss[0]}~${loss[1]}%)`; },
   renderBeanSelect(){
     const sel = $("r-beansel"), cur = sel.value;
     sel.innerHTML = '<option value="">(선택 안 함)</option>' + Object.values(this.beans).filter(b => !this.isConsumed(b)).map(b => `<option value="${esc(b.id)}">${esc(b.name)} · ${this.remainingG(b)}g</option>`).join("");
@@ -847,11 +890,18 @@ const app = {
   },
   daySet(i, key, val){
     const r = this.day.rows[i]; if(!r) return;
-    if(key === "beanId") r.beanId = val;
+    if(key === "beanId" || key === "level") r[key] = val;
     else { const x = parseFloat(val); if(!(x > 0)) return this.dayRender(); r[key] = key === "n" ? Math.min(20, Math.round(x)) : Math.round(x); if(key === "w") this.day.w = r.w; }
     this.daySave(); this.dayRender();
   },
   dayDel(i){ this.day.rows.splice(i, 1); this.daySave(); this.dayRender(); },
+  levelOptions(b, cur){
+    if(!b) return "";
+    const L = this.sellerLevels(b.sellerRoast);
+    return `<option value="">생두 목표 (${this.beanLevel(b).name})</option>`
+      + LEVELS.map(l => `<option value="${l.key}" ${cur === l.key ? "selected" : ""}>${l.name}${L.includes(l.key) ? " ★판매처 추천" : ""}</option>`).join("")
+      + `<option value="compare" ${cur === "compare" ? "selected" : ""}>${L.length >= 2 ? `추천 구간 나눠 비교 (${L.map(k => this.lvName(k)).join("·")})` : "배전도 비교 감량 12·14·16% (지식 베이스 7.2)"}</option>`;
+  },
   // 버너 화력: 생두별 계획(bean.heatPlan으로 단계마다 바꿀 수 있음)과 내 버너 눈금 이름
   heatNames: {},
   heatStep(lv, d){ const i = HEAT.indexOf(lv); return HEAT[Math.max(0, Math.min(HEAT.length - 1, (i < 0 ? 2 : i) + d))]; },
@@ -867,13 +917,29 @@ const app = {
   },
   setHeatName(lv, val){ this.heatNames[lv] = val.trim(); try { localStorage.setItem("roast-heat-names", JSON.stringify(this.heatNames)); } catch(e){} this.dayRender(); },
   // 배치 순서. 고가 생두처럼 bean.batchPlan이 있으면 남은 계획 단계의 투입량·목표 감량을 쓴다(지식 베이스 4.1).
+  // 배치마다 목표 배전도(level)와 목표 감량(loss)을 정한다.
+  // 행의 목표: 비우면 생두의 목표 배전도, "compare"면 추천 구간의 배전도를 배치마다 나눠 볶는다(지식 베이스 7.2 배전도 비교).
+  // 추천 구간이 한 단계뿐이거나 없으면 7.2의 감량 12% / 14% / 16%로 나눈다.
+  dayTargets(b, r){
+    if(r.level === "compare"){
+      const L = this.sellerLevels(b.sellerRoast);
+      const pts = L.length >= 2 ? L.map(k => ({level: k, loss: this.levelLoss(k), label: this.lvName(k) + " 비교"}))
+        : [12, 14, 16].map(x => ({level: levelOf(x).key, loss: [x - 0.5, x + 0.5], label: `감량 ${x}% 비교`}));
+      const out = []; pts.forEach((t, g) => { const n = Math.floor(r.n / pts.length) + (g < r.n % pts.length ? 1 : 0); for(let i = 0; i < n; i++) out.push(t); });
+      return out;
+    }
+    const k = r.level || this.beanLevel(b).key;
+    return Array.from({length: r.n}, () => ({level: k, loss: this.levelLoss(k), label: ""}));
+  },
   dayQueue(){
     const q = [], seen = {};
     this.day.rows.forEach((r, ri) => { const b = this.beans[r.beanId]; if(!b) return;
-      for(let j = 0; j < r.n; j++){
+      this.dayTargets(b, r).forEach(t => {
         const k = (seen[b.id] = (seen[b.id] ?? this.allBatches(b).length) + 1) - 1, step = (b.batchPlan || [])[k];
-        q.push({beanId: b.id, row: ri, w: step ? step.weightG : r.w, loss: step && step.lossTarget ? step.lossTarget : null, label: step ? step.label : ""});
-      }
+        // 고가 생두의 배치 계획(4.1)이 남아 있으면 그 단계의 투입량·목표 감량이 우선
+        const loss = step && step.lossTarget ? step.lossTarget : t.loss;
+        q.push({beanId: b.id, row: ri, w: step ? step.weightG : r.w, loss, level: step && step.lossTarget ? levelOf((loss[0] + loss[1]) / 2).key : t.level, label: step ? step.label : t.label});
+      });
     });
     return q;
   },
@@ -896,6 +962,7 @@ const app = {
     const act = this.activeBeans();
     $("day-rows").innerHTML = this.day.rows.length ? this.day.rows.map((r, i) => `<div class="grid" style="margin-bottom:8px;align-items:end">
       <div style="grid-column:1/-1"><label>생두</label><select onchange="app.daySet(${i}, 'beanId', this.value)">${act.map(b => `<option value="${esc(b.id)}" ${b.id === r.beanId ? "selected" : ""}>${esc(b.name)} · 남은 ${this.remainingG(b).toLocaleString("ko-KR")}g</option>`).join("")}</select></div>
+      <div style="grid-column:1/-1"><label>목표 배전도</label><select onchange="app.daySet(${i}, 'level', this.value)">${this.levelOptions(this.beans[r.beanId], r.level || "")}</select></div>
       <div><label>배치 수</label><input type="number" inputmode="numeric" min="1" value="${r.n}" onchange="app.daySet(${i}, 'n', this.value)"></div>
       <div><label>배치당 생두 (g)</label><input type="number" inputmode="numeric" value="${r.w}" onchange="app.daySet(${i}, 'w', this.value)"></div>
       ${this.day.rows.length > 1 ? `<div><button class="sec" onclick="app.dayDel(${i})">이 생두 빼기</button></div>` : ""}</div>`).join("")
@@ -912,19 +979,27 @@ const app = {
       const b = this.beans[r.beanId], p = this.profileOf(b), items = q.map((x, i) => ({...x, no: i + 1})).filter(x => x.row === ri);
       if(!items.length) return "";
       const base = this.dayBase(b, this.day.cold), need = items.reduce((s, x) => s + x.w, 0), rem = this.remainingG(b);
-      const outR = x => { const l = x.loss || p.loss; return [x.w * (1 - l[1] / 100), x.w * (1 - l[0] / 100)]; };
+      const outR = x => { const l = x.loss || p.loss, hi = l[1] > 25 ? l[0] : l[1]; return [x.w * (1 - hi / 100), x.w * (1 - l[0] / 100)]; };
       items.forEach(x => { const o = outR(x); total += x.w; outLo += o[0]; outHi += o[1]; x.charge = this.chargeFor(base, x.no > 1).v; });
       const tips = this.tips({density: b.density, moist: b.moisture, crop: b.crop, expensive: b.expensive, process: b.process, kind: b.profileId === "yemen" ? "yemen" : "",
         alt: b.origin && (b.origin.altitudeRange ? b.origin.altitudeRange[0] : b.origin.altitude)});
       const h = this.heatPlan(b), hs = k => `<b>${esc(this.heatTxt(h[k]))}</b>`;
+      // 같은 목표(배전도·감량·투입량)끼리 묶어 한 줄로
+      const groups = []; items.forEach(x => { const last = groups[groups.length - 1];
+        if(last && last.level === x.level && last.loss.join() === x.loss.join() && last.w === x.w && last.label === x.label){ last.to = x.no; }
+        else groups.push({level: x.level, loss: x.loss, w: x.w, label: x.label, from: x.no, to: x.no}); });
+      groups.forEach(gp => { gp.nos = gp.from === gp.to ? `#${gp.from}` : `#${gp.from}~#${gp.to}`; });
       return `<div class="card"><div class="row" style="justify-content:space-between"><b>${esc(b.name)}</b><span class="tag">${esc(p.name)} · 초반 화력 ${p.power}</span></div>
         <div class="small">${items.length}배치 · 생두 ${g(need)} 사용 · 남은 생두 ${g(rem)} → ${g(Math.max(0, rem - need))}${need > rem ? ' <b class="bad">남은 양보다 많습니다</b>' : ""}</div>
         <table style="margin-top:6px"><tr><th>단계</th><th>목표</th><th>버너 화력</th></tr>
         <tr><td>건조<br><span class="small">투입~옐로우</span></td><td>옐로우 <b>${rng(p.yellow)}</b></td><td>${hs("dry")}${items.some(x => x.no > 1) ? '<br><span class="small">2번째 배치부터 약간 낮게</span>' : ""}</td></tr>
         <tr><td>메일라드<br><span class="small">옐로우~</span></td><td>옐로우를 누르면</td><td>${hs("mai")}<br><span class="small">단계적으로 낮춤</span></td></tr>
         <tr><td>1차 크랙 대비</td><td>1차 크랙 30~60초 전<br><span class="small">목표 기준 ${mmss(p.c1[0] - 60)}~${mmss(p.c1[0] - 30)}</span></td><td>${hs("pre")}</td></tr>
-        <tr><td>디벨롭</td><td>1차 크랙 <b>${rng(p.c1)}</b><br>→ 배출 <b>1차 크랙 후 ${rng(p.dev)}</b><br><span class="small">DTR ${p.dtr[0]}~${p.dtr[1]}%, 목표 기준 ${mmss(p.c1[0] + p.dev[0])}~${mmss(p.c1[1] + p.dev[1])}</span></td><td>${hs("dev")}</td></tr>
-        <tr><td>배출 무게</td><td colspan="2"><b>${g(outR(items[0])[0])}~${g(outR(items[0])[1])}</b> (투입 ${g(items[0].w)}, 감량 ${(items[0].loss || p.loss).join("~")}%)</td></tr></table>
+        <tr><td>디벨롭</td><td>1차 크랙 <b>${rng(p.c1)}</b><br>→ 배출은 아래 목표 배전도별</td><td>${hs("dev")}</td></tr></table>
+        ${b.sellerRoast ? `<div class="small" style="margin-top:6px">판매처 추천 로스팅: <b>${esc(this.sellerText(b.sellerRoast))}</b></div>` : ""}
+        <table style="margin-top:6px"><tr><th>목표 배전도</th><th>배출 시점</th><th>배출 무게</th></tr>
+        ${groups.map(gp => { const dt = this.devTarget(p, gp.level, p.c1); return `<tr><td><b>${esc(this.lvName(gp.level))}</b>${this.sellerLevels(b.sellerRoast).includes(gp.level) ? " ★" : ""}<br><span class="small">${gp.nos}${gp.label ? " · " + esc(gp.label) : ""}</span></td>
+          <td>${LEVEL_POINT[gp.level]}<br><span class="small">1차 크랙 후 ${rng(dt.dev)} · ${esc(dt.why)}</span></td><td>${this.outText(gp.w, gp.loss)}</td></tr>`; }).join("")}</table>
         <details class="small noprint" style="margin-top:4px"><summary style="cursor:pointer">이 생두 화력 계획 바꾸기</summary>
           <div class="grid" style="margin-top:6px">${[["dry", "건조"], ["mai", "메일라드"], ["pre", "1차 크랙 대비"], ["dev", "디벨롭"]].map(([k, l]) => `<div><label>${l}</label><select onchange="app.setHeat('${esc(b.id)}', '${k}', this.value)">
             <option value="">기본 (${esc(this.heatTxt(this.heatPlan({...b, heatPlan: {...(b.heatPlan || {}), [k]: ""}})[k]))})</option>${HEAT.slice().reverse().map(v => `<option value="${v}" ${(b.heatPlan || {})[k] === v ? "selected" : ""}>${esc(this.heatTxt(v))}</option>`).join("")}</select></div>`).join("")}</div>
@@ -950,9 +1025,14 @@ const app = {
       <td style="width:110px"><input type="number" inputmode="decimal" placeholder="${b.weight}g 중" value="${b.out ?? ""}" onchange="app.daySetOut(${b.id}, this)"></td><td class="small" id="dl-${b.id}">${this.lossText(b)}</td></tr>`).join("");
     return `<div class="card"><h2>${r.finished ? "오늘 결과 · 배출 무게 입력" : `진행 중인 연속 로스팅 (배치 ${r.i + 1}/${r.q.length})`}</h2>
       ${recs.length ? `<table><tr><th></th><th>배치</th><th>배출 g</th><th>감량</th></tr>${rows}</table>` : '<p class="small">아직 끝난 배치가 없습니다.</p>'}
+      ${recs.some(x => /비교/.test(x.note || "")) ? '<p class="small">배전도 비교 배치는 숙성 뒤 나란히 커핑해 산미·단맛·쓴맛 차이를 보고 취향 지점을 정하세요(지식 베이스 7.2). 평가는 「배치 기록」의 숙성 후 평가 칸에 남기면 됩니다.</p>' : ""}
       <div class="row" style="margin-top:8px">${r.finished ? `<button class="sec" onclick="app.runClear()">정리 완료 (이 카드 닫기)</button>` : `<button class="pri" onclick="app.runOpen()">진행 화면으로</button>`}</div></div>`;
   },
-  lossText(b){ return b.loss != null ? `${b.loss.toFixed(1)}%<br>${levelOf(b.loss).name}` : "-"; },
+  lossText(b){
+    if(b.loss == null) return b.targetLoss ? `목표 ${b.targetLoss[1] > 25 ? b.targetLoss[0] + "% 이상" : b.targetLoss.join("~") + "%"}` : "-";
+    const t = b.targetLoss, cmp = !t ? "" : b.loss < t[0] ? ' <span class="warn">목표보다 약</span>' : b.loss > t[1] ? ' <span class="warn">목표보다 강</span>' : ' <span class="ok">목표 ✓</span>';
+    return `${b.loss.toFixed(1)}%<br>${levelOf(b.loss).name}${cmp}`;
+  },
   daySetOut(id, el){
     const b = this.findBatch(id), out = parseFloat(el.value); if(!b) return;
     if(out >= b.weight) { el.value = ""; return this.notify("배출 무게가 투입 무게보다 크거나 같습니다."); }
@@ -1030,8 +1110,8 @@ const app = {
     this.lastId = Math.max(Date.now(), (this.lastId || 0) + 1, ...r.done.map(x => x + 1));
     const rec = {id: this.lastId, date: new Date().toISOString(), profile: p.name, profileId: p.id, beanId: b.id, charge: r.charge.v, cold: r.cold, second: r.i > 0,
       bean: b.name, env: r.cold ? "겨울·바람" : "", weight: it.w, out: null, loss: null,
-      note: `연속 로스팅 ${r.i + 1}/${r.q.length} · 화력 ${(r.hlog || []).map(x => (x.t ? mmss(x.t) + " " : "") + x.lv + (x.k === "manual" ? "(직접)" : "")).join(" → ")}`,
-      heat: r.hlog || [], total, dev, dtr: dev != null ? dev / total * 100 : null, events: JSON.parse(JSON.stringify(ev)), points: [], tasting: ""};
+      note: `연속 로스팅 ${r.i + 1}/${r.q.length}${it.level ? " · 목표 " + this.lvName(it.level) : ""}${it.label ? " · " + it.label : ""} · 화력 ${(r.hlog || []).map(x => (x.t ? mmss(x.t) + " " : "") + x.lv + (x.k === "manual" ? "(직접)" : "")).join(" → ")}`,
+      heat: r.hlog || [], targetLevel: it.level || null, targetLoss: it.loss || null, total, dev, dtr: dev != null ? dev / total * 100 : null, events: JSON.parse(JSON.stringify(ev)), points: [], tasting: ""};
     this.upsertBatch(rec);
     r.done.push(rec.id); r.prev = {t0: r.t0, ev: JSON.parse(JSON.stringify(ev)), charge: r.charge, alerted: r.alerted, lastMsg: r.lastMsg, heat: r.heat, hlog: r.hlog};
     r.lastMsg = `#${r.i + 1} 완료 · ${mmss(total)}${dev != null ? ` · 디벨롭 ${mmss(dev)} (DTR ${(dev / total * 100).toFixed(1)}%)` : ""}`;
@@ -1071,7 +1151,8 @@ const app = {
     put("run-info", `배치 ${r.i + 1}/${r.q.length} · ${esc(b.name)} · ${it.w}g`);
     if(!r.t0){
       put("run-timer", "0:00");
-      put("run-target", (r.lastMsg ? esc(r.lastMsg) + "<br>" : "") + `투입 온도 <b>${r.charge.v}℃</b><br><span class="small">${esc(r.charge.why)}</span>`);
+      put("run-target", (r.lastMsg ? esc(r.lastMsg) + "<br>" : "") + `투입 온도 <b>${r.charge.v}℃</b><br><span class="small">${esc(r.charge.why)}</span>`
+        + (it.level ? `<br>목표 <b>${esc(this.lvName(it.level))}</b>${it.label ? " · " + esc(it.label) : ""}<br><span class="small">배출 무게 ${this.outText(it.w, it.loss)}</span>` : ""));
       put("run-heat", this.runCoolHtml() + `<div>시작 화력 <b>${esc(this.heatTxt(plan.dry))}</b>${r.i > 0 ? '<br><span class="small">연속 배치: 첫 배치보다 약간 낮게 · 채프 제거</span>' : ""}</div>`);
       put("run-charge", `<button class="sec" onclick="app.runAdj(-5)">−5℃</button> <button class="sec" onclick="app.runAdj(5)">+5℃</button>`);
       put("run-alert", ""); $("run-alert").hidden = true;
@@ -1083,17 +1164,19 @@ const app = {
       label = "옐로우"; hint = "색이 연노랑, 풋내 → 빵 냄새"; target = `옐로우 목표 <b>${rng(p.yellow)}</b>`;
       if(t > p.yellow[1] + 30) alert = "옐로우가 늦습니다 · 초반 열량 확인";
     } else if(!ev.c1s){
-      label = "1차 크랙"; hint = "\"탁\" 소리가 나면 누르기"; target = `1차 크랙 목표 <b>${rng(p.c1)}</b><br><span class="small">옐로우 ${mmss(ev.yellow.t)}</span>`;
+      label = "1차 크랙"; hint = "\"탁\" 소리가 나면 누르기"; target = `1차 크랙 목표 <b>${rng(p.c1)}</b><br><span class="small">옐로우 ${mmss(ev.yellow.t)}${it.level ? " · 목표 " + esc(this.lvName(it.level)) : ""}</span>`;
       if(t >= p.c1[0] - 60){
         // 옐로우 뒤에 직접 화력을 바꿨으면 그 값을 존중하고 안내만 한다
         if(!r.alerted.heat && !(r.hlog || []).some(x => x.k === "manual" && x.t >= ev.yellow.t)) this.runHeatSet(plan.pre, Math.round(t), "pre");
         alert = `화력 한 단계 ↓ ${esc(this.heatTxt(plan.pre))} (1차 크랙 30~60초 전)`; this.runAlertOnce("heat", 2);
       }
     } else {
-      const dev = t - ev.c1s.t; label = "배출"; hint = "배출하고 바로 누르기 · 4분 안에 냉각";
-      target = `디벨롭 <b>${mmss(dev)}</b> / 목표 ${rng(p.dev)}<br><span class="small">옐로우 ${mmss(ev.yellow.t)} · 1차 크랙 ${mmss(ev.c1s.t)}</span>`;
-      if(dev >= p.dev[1]){ alert = "디벨롭 상한 · 지금 배출"; this.runAlertOnce("devmax", 3); }
-      else if(dev >= p.dev[0]){ alert = "배출 구간 · 색과 향을 보고 배출"; this.runAlertOnce("devmin", 1); }
+      // 목표 배전도가 프로파일 기본과 다르면 2.1장 DTR을 실제 1차 크랙 시각에 적용한 디벨롭 시간으로 알린다
+      const dev = t - ev.c1s.t, dt = this.devTarget(p, it.level, ev.c1s.t), pt = it.level ? LEVEL_POINT[it.level] : "";
+      label = "배출"; hint = pt ? `${pt}에서 배출 · 4분 안에 냉각` : "배출하고 바로 누르기 · 4분 안에 냉각";
+      target = `디벨롭 <b>${mmss(dev)}</b> / 목표 ${rng(dt.dev)}<br><span class="small">${it.level ? esc(this.lvName(it.level)) + " · " : ""}${esc(dt.why)}<br>옐로우 ${mmss(ev.yellow.t)} · 1차 크랙 ${mmss(ev.c1s.t)}</span>`;
+      if(dev >= dt.dev[1]){ alert = "디벨롭 상한 · 지금 배출"; this.runAlertOnce("devmax", 3); }
+      else if(dev >= dt.dev[0]){ alert = `배출 구간 · ${pt || "색과 향을 보고 배출"}`; this.runAlertOnce("devmin", 1); }
     }
     if(t > 900) alert = "총 15분 초과 · 향이 납작해질 수 있습니다";
     if(!alert && r.heatMsg && now < r.heatMsg.until) alert = esc(r.heatMsg.txt);
@@ -1158,6 +1241,7 @@ const app = {
     this.ocrTexts = [[], []]; $("ocr-raw").hidden = true; $("ocr-reset").hidden = true; $("ocr-status").textContent = "";
     ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-grade","nb-harvest","nb-alt","nb-density","nb-moist","nb-price","nb-supplier","nb-date","nb-cup","nb-notes","paste-text"].forEach(f => { $(f).value = ""; });
     $("nb-crop").value = ""; $("nb-kind").value = ""; $("nb-process").selectedIndex = 0; $("nb-kg").value = "1";
+    $("nb-sr-from").value = ""; $("nb-sr-to").value = ""; $("nb-level").value = ""; this.nbLevelHint();
   },
   readPasted(){
     const t = $("paste-text").value;
@@ -1262,8 +1346,13 @@ const app = {
     const mv = any(["수분율/밀도", "수분율", "수분"]), mm = mv.match(/(\d+(?:\.\d+)?)\s*%/), gl = mv.match(/(\d{3}(?:\.\d+)?)\s*g\s*\/\s*l/i) || mv.match(/%\s*,?\s*(\d{3}(?:\.\d+)?)/);
     if(mm && +mm[1] >= 5 && +mm[1] <= 20) out.moisture = +mm[1];
     if(gl) out.extra.push(`판매처 밀도 ${gl[1]} g/L (측정 방식이 지식 베이스의 간이 밀도(g/ml)와 달라 로스팅 보정에는 쓰지 않음)`);
-    const sr = any("로스팅");
-    if(/light|medium|dark|라이트|미디엄|다크|시티/i.test(sr)) out.extra.push("판매처 추천 로스팅: " + sr);
+    // 판매처 추천 로스팅 포인트: 세웅지씨 정보표 「로스팅 | Very Light ~ Medium Light」, 커피리브레 「추천 포인트 약 - 중약」.
+    // 팔레트 그림(바퀴)은 강조된 칸을 글자로 읽을 수 없어서 쓰지 않는다.
+    const sr = any(["로스팅", "로스팅 포인트", "추천 포인트", "추천 로스팅"]);
+    out.sellerRoast = this.sellerRoastOf(sr);
+    if(!out.sellerRoast && /light|medium|dark/i.test(sr)) out.extra.push("판매처 추천 로스팅: " + sr);
+    const ag = B.findIndex(l => /agtron/i.test(l)), agm = ag >= 0 ? B.slice(ag, ag + 4).join(" ").match(/(\d{2,3})\s*[–\-~]\s*(\d{2,3})/) : null;
+    if(agm) out.extra.push(`판매처 추천 Agtron ${agm[1]}~${agm[2]} (지식 베이스에 없는 지표라 참고만)`);
     // 컵 노트: 세웅지씨는 라벨, 커피리브레는 라벨 없이 「체리, 포도잼, 황도」처럼 쉼표로 나열
     const noteLine = l => { const p = l.split(/[,，]/).map(s => s.trim()); return p.length >= 3 && p.every(s => s && s.length <= 12 && /[가-힣]/.test(s) && !/\d|원|\|/.test(s)); };
     out.cup = any(["커핑 노트", "플레이버 노트", "향미 노트", "컵 노트"]) || B.find(noteLine) || A.find(noteLine) || "";
@@ -1298,8 +1387,9 @@ const app = {
     if(r.process) $("nb-process").value = r.process;
     if(r.kind) $("nb-kind").value = r.kind;
     if(this.cropOf(r.harvestYear)) $("nb-crop").value = this.cropOf(r.harvestYear);
+    if(r.sellerRoast){ $("nb-sr-from").value = r.sellerRoast.from; $("nb-sr-to").value = r.sellerRoast.to; this.nbLevelHint(); }
     const items = [["이름", r.name], ["생산국", r.country], ["지역", r.region], ["농장·생산자", r.farm], ["품종", r.variety], ["가공방식", r.process], ["재배고도", r.altitude], ["수확연도", r.harvestYear], ["컵 노트", r.cup]];
-    const opt = [["등급", r.grade], ["입고일자", r.arrived], ["수분", r.moisture], ["가격", r.price], ["구입처", r.supplier]].filter(x => x[1]);
+    const opt = [["등급", r.grade], ["입고일자", r.arrived], ["수분", r.moisture], ["가격", r.price], ["구입처", r.supplier], ["추천 로스팅", r.sellerRoast && this.sellerText(r.sellerRoast)]].filter(x => x[1]);
     $("nb-box").open = true;
     return {found: [...items, ...opt].filter(x => x[1]).map(x => x[0]), missing: items.filter(x => !x[1]).map(x => x[0])};
   },
@@ -1322,17 +1412,18 @@ const app = {
     const id = d.slice(0, 7) + "-" + slug + "-" + Date.now().toString(36).slice(-4);
     const [country, ...rest] = v("nb-origin").split("/").map(s => s.trim());
     const an = (v("nb-alt").match(/\d[\d,]*/g) || []).map(x => +x.replace(/,/g, "")).filter(n => n > 0), altR = an.length ? [Math.min(...an), Math.max(...an)] : null;
-    const hy = num("nb-harvest") ? Math.round(num("nb-harvest")) : null;
+    const hy = num("nb-harvest") ? Math.round(num("nb-harvest")) : null, sr = this.srFrom($("nb-sr-from"), $("nb-sr-to"));
     this.beans[id] = {id, name, status: "active", origin: {country: country || "", region: rest.join(" / "), farm: v("nb-farm"), altitude: altR ? Math.round((altR[0] + altR[1]) / 2) : null, altitudeRange: altR},
       variety: v("nb-variety"), process, grade: v("nb-grade"), harvestYear: hy, crop: v("nb-crop") || this.cropOf(hy), cupNotes: v("nb-cup"),
       supplier: v("nb-supplier"), purchasedAt: d, arrivedAt: v("nb-arrived") || null, purchasedG: Math.round(kg * 1000),
       pricePerKg: num("nb-price"), density: num("nb-density"), moisture: num("nb-moist"), expensive, profileId,
-      targetLevel: v("nb-level") || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: v("nb-notes"), batches: []};
+      sellerRoast: sr, targetLevel: v("nb-level") || this.sellerDefault(sr) || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: v("nb-notes"), batches: []};
     this.saveBeans(); this.openGuide[id] = true; this.renderBeans();
     ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-grade","nb-harvest","nb-alt","nb-density","nb-moist","nb-price","nb-supplier","nb-date","nb-cup","nb-notes","paste-text"].forEach(f => { $(f).value = ""; });
     $("nb-kg").value = "1";
     $("nb-crop").value = "";
     this.ocrTexts = [[], []]; $("ocr-reset").hidden = true; $("ocr-raw").hidden = true;
+    $("nb-sr-from").value = ""; $("nb-sr-to").value = ""; $("nb-level").value = ""; this.nbLevelHint();
     $("nb-expensive").checked = false; $("nb-box").open = false;
     this.notify("등록했습니다. 아래에서 가이드를 확인하세요.");
   },
@@ -1375,7 +1466,8 @@ const app = {
       <table><tr><td>옐로우</td><td>${rng(p.yellow)}</td></tr><tr><td>1차 크랙</td><td>${rng(p.c1)}</td></tr>
       <tr><td>버너 화력</td><td>${(h => [`건조 ${h.dry}`, `옐로우 후 ${h.mai}`, `1차 크랙 30~60초 전 ${h.pre}`, `디벨롭 ${h.dev}`].map(esc).join(" → "))(this.heatPlan(bean))}</td></tr>
       <tr><td>디벨롭</td><td>${rng(p.dev)} (DTR 약 ${p.dtr[0]}~${p.dtr[1]}%)</td></tr>
-      <tr><td>목표 배전도</td><td>${lv.name} — 감량 ${lv.lo}~${lv.hi > 25 ? "" : lv.hi}%${lv.hi > 25 ? " 이상" : ""} · ${esc(lv.use)}</td></tr>
+      <tr><td>목표 배전도</td><td>${lv.name} — 감량 ${lv.lo}~${lv.hi > 25 ? "" : lv.hi}%${lv.hi > 25 ? " 이상" : ""} · ${esc(lv.use)}<br><span class="small">배출: ${LEVEL_POINT[lv.key]} · ${(dt => `1차 크랙 후 ${rng(dt.dev)} (${dt.why})`)(this.devTarget(p, lv.key, p.c1))}</span></td></tr>
+      ${bean.sellerRoast ? `<tr><td>판매처 추천</td><td>${esc(this.sellerText(bean.sellerRoast))} <span class="small">(지식 베이스 8장: 로스팅 목표의 출발점)</span></td></tr>` : ""}
       <tr><td>프로파일 감량</td><td>${p.loss[0]}~${p.loss[1]}%</td></tr>
       <tr><td>첫 배치 투입 온도 (추정)</td><td><b>${ce.value}℃</b> (${ce.value - 5}~${ce.value + 5}℃, ${esc(ROASTER.name)} 온도계 눈금 기준)</td></tr></table>
       <ul class="small">${ce.parts.map(x => `<li>${x.v > 0 ? "+" : ""}${x.v}℃ ${esc(x.why)}</li>`).join("")}<li>${esc(ROASTER.note)}</li></ul>
@@ -1504,7 +1596,7 @@ const app = {
   fromBeanBatch(bean, b){
     return {id: b.id, date: b.date, profile: b.profile || this.profileOf(bean).name, profileId: b.profileId || bean.profileId, beanId: bean.id, bean: bean.name,
       charge: b.charge ?? null, cold: !!b.cold, second: !!b.second, env: b.env || "", note: b.note || "", weight: b.weightG, out: b.outG ?? null, loss: b.loss ?? null,
-      total: b.total ?? null, dev: b.dev ?? null, dtr: b.dtr ?? null, events: b.events || {}, points: b.points || [], tasting: b.tasting || "", manual: !!b.manual, fromRepo: true};
+      total: b.total ?? null, dev: b.dev ?? null, dtr: b.dtr ?? null, events: b.events || {}, points: b.points || [], tasting: b.tasting || "", manual: !!b.manual, heat: b.heat || [], targetLevel: b.targetLevel || null, targetLoss: b.targetLoss || null, fromRepo: true};
   },
   logList(){
     const tomb = this.tomb(), local = this.load(), ids = new Set(local.map(b => b.id)), extra = [];
@@ -1580,6 +1672,9 @@ const app = {
       <div><label>등급</label><input class="ed-grade" value="${esc(b.grade || "")}"></div>
       <div><label>수확연도</label><input class="ed-harvest" type="number" value="${b.harvestYear ?? ""}"></div>
       <div><label>뉴/올드크롭</label><select class="ed-crop"><option value="" ${sel("", b.crop)}>미확인</option><option value="new" ${sel("new", b.crop)}>뉴크롭</option><option value="old" ${sel("old", b.crop)}>올드크롭</option></select></div>
+      <div><label>추천 로스팅 (밝은 쪽)</label><select class="ed-sr-from">${this.srOptions((b.sellerRoast || {}).from || "")}</select></div>
+      <div><label>추천 로스팅 (어두운 쪽)</label><select class="ed-sr-to">${this.srOptions((b.sellerRoast || {}).to || "")}</select></div>
+      <div><label>목표 배전도</label><select class="ed-level">${LEVELS.map(l => `<option value="${l.key}" ${l.key === this.beanLevel(b).key ? "selected" : ""}>${l.name}${this.sellerLevels(b.sellerRoast).includes(l.key) ? " ★추천" : ""}</option>`).join("")}</select></div>
       <div><label>상태</label><select class="ed-status"><option value="active" ${sel("active", b.status === "consumed" ? "consumed" : "active")}>사용 중</option><option value="consumed" ${sel("consumed", b.status)}>소비 완료</option></select></div></div>
       <label style="margin-top:8px">컵 노트</label><input class="ed-cup" value="${esc(b.cupNotes || "")}">
       <div class="row" style="margin-top:8px"><button class="pri" onclick="app.saveBeanEdit(this)">저장</button><button class="sec" onclick="app.cancelEdit()">취소</button></div></div>`;
@@ -1592,7 +1687,8 @@ const app = {
     const num = sel => { const x = parseFloat(q(sel)); return isNaN(x) ? null : x; };
     const e = {name: q(".ed-name").trim(), purchasedG: Math.round(kg * 1000), pricePerKg: num(".ed-price"), supplier: q(".ed-supplier").trim(), purchasedAt: q(".ed-pdate") || b.purchasedAt,
       density: num(".ed-density"), moisture: num(".ed-moist"), crop: q(".ed-crop"), status: q(".ed-status"),
-      grade: q(".ed-grade").trim(), harvestYear: num(".ed-harvest") ? Math.round(num(".ed-harvest")) : null, cupNotes: q(".ed-cup").trim()};
+      grade: q(".ed-grade").trim(), harvestYear: num(".ed-harvest") ? Math.round(num(".ed-harvest")) : null, cupNotes: q(".ed-cup").trim(),
+      sellerRoast: this.srFrom(outer.querySelector(".ed-sr-from"), outer.querySelector(".ed-sr-to")), targetLevel: q(".ed-level")};
     Object.assign(b, e); this.edits[b.id] = e; this.saveEdits(); this.saveBeans();
     this.editing = null; this.renderBeans(); this.renderLog(); this.notify("수정했습니다.");
   },
