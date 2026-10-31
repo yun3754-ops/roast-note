@@ -1,0 +1,26 @@
+# 생두 시세 갱신: 앱 「생두 구매」 탭의 「지금 갱신」 버튼으로 여기서 직접 실행한다(자동 일정 없음).
+# 세웅지씨·커피리브레·GSC 목록을 모아 data/market.json을 바꾸고 커밋하면 GitHub Pages가 다시 배포된다.
+name: 생두 시세 갱신
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: market
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: 세 판매처 목록 모으기
+        run: python3 tools/collect.py data/market.json
+      - name: 바뀐 목록 커밋
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market.json
+          if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+          git commit -m "생두 시세 갱신 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')"
+          git push
