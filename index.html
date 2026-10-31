@@ -130,8 +130,11 @@ ul{margin:6px 0;padding-left:20px}
 <!-- 내 생두 -->
 <section id="t-beans">
   <div class="card">
-    <h2>사진·캡처로 등록</h2>
-    <p class="small">구매 화면 캡처나 포장 라벨 사진을 고르면 글자를 읽어 아래 등록 폼을 채웁니다. 사진은 폰 안에서만 처리되고 어디로도 전송되지 않습니다. 처음 한 번은 인식 데이터(약 10MB)를 내려받습니다. 읽은 값은 꼭 확인하고 고쳐 주세요.</p>
+    <h2>상품 페이지로 등록</h2>
+    <p class="small">세웅지씨·커피리브레 생두 상세 페이지의 글을 전체 선택해 복사하고 아래에 붙여 넣으면 가장 정확합니다. 생두명·원산지·지역·농장·고도·품종·가공·컵 노트·수확연도·가격(1kg 기준)을 읽어 등록 폼을 채웁니다.</p>
+    <textarea id="paste-text" rows="3" placeholder="상품 상세 페이지 글을 여기에 붙여 넣기"></textarea>
+    <div class="row" style="margin-top:6px"><button class="sec" onclick="app.readPasted()">붙여 넣은 글 읽기</button></div>
+    <p class="small" style="margin-top:10px">또는 구매 화면 캡처·포장 라벨 사진을 고르면 글자를 읽습니다. 사진은 폰 안에서만 처리되고 어디로도 전송되지 않습니다. 처음 한 번은 인식 데이터(약 10MB)를 내려받습니다. 읽은 값은 꼭 확인하고 고쳐 주세요.</p>
     <input id="ocr-file" type="file" accept="image/*" onchange="app.ocr(this.files[0])">
     <div class="small" id="ocr-status" role="status" style="margin-top:8px"></div>
     <details id="ocr-raw" hidden><summary class="small">인식된 원문 보기</summary><pre id="ocr-text" style="white-space:pre-wrap;font-size:12px;overflow-x:auto"></pre></details>
@@ -148,17 +151,20 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>가공방식</label><select id="nb-process"><option>워시드</option><option>내추럴</option><option>허니</option><option>무산소</option><option>기타</option></select></div>
       <div><label>특수 분류</label><select id="nb-kind"><option value="">일반</option><option value="gesha">게이샤</option><option value="yemen">예멘</option><option value="excelsa">엑셀사</option><option value="robusta">로부스타·CxR</option></select></div>
       <div><label>용도</label><select id="nb-purpose"><option value="filter">필터(핸드드립)</option><option value="espresso">에스프레소 블렌드 베이스</option></select></div>
-      <div><label>수확연도</label><select id="nb-crop"><option value="">미확인</option><option value="new">뉴크롭</option><option value="old">올드크롭</option></select></div>
-      <div><label>고도 (m)</label><input id="nb-alt" type="number"></div>
+      <div><label>등급</label><input id="nb-grade" placeholder="예: G1, AA"></div>
+      <div><label>수확연도</label><input id="nb-harvest" type="number" placeholder="예: 2026"></div>
+      <div><label>뉴/올드크롭</label><select id="nb-crop"><option value="">미확인</option><option value="new">뉴크롭</option><option value="old">올드크롭</option></select></div>
+      <div><label>재배고도 (m)</label><input id="nb-alt" placeholder="예: 1900~2300"></div>
       <div><label>밀도 (g/ml)</label><input id="nb-density" type="number" step="0.01"></div>
       <div><label>수분 (%)</label><input id="nb-moist" type="number" step="0.1"></div>
       <div><label>구입량 (kg) *</label><input id="nb-kg" type="number" step="0.1" value="1"></div>
       <div><label>kg당 가격 (원)</label><input id="nb-price" type="number"></div>
-      <div><label>구입처</label><input id="nb-supplier"></div>
+      <div><label>구입처</label><input id="nb-supplier" list="supplier-list"><datalist id="supplier-list"><option value="세웅지씨"><option value="커피리브레"></datalist></div>
       <div><label>구입일</label><input id="nb-date" type="date"></div>
       <div><label>목표 배전도</label><select id="nb-level"><option value="">프로파일 기본값</option></select></div>
     </div>
-    <label style="margin-top:10px">메모 (컵 노트 등)</label><textarea id="nb-notes" rows="2"></textarea>
+    <label style="margin-top:10px">컵 노트</label><input id="nb-cup" placeholder="예: 살구, 믹스베리, 포도, 베르가못">
+    <label style="margin-top:10px">메모</label><textarea id="nb-notes" rows="2"></textarea>
     <label style="margin-top:10px"><input type="checkbox" id="nb-expensive" style="width:auto"> 고가 생두 (소량으로 나눠 배전도를 비교하는 계획을 만듭니다)</label>
     <div class="row" style="margin-top:8px"><button class="pri" onclick="app.addBean()">등록하고 가이드 보기</button></div>
   </details>
@@ -402,7 +408,7 @@ const app = {
     if(o.density != null && !isNaN(o.density)){
       if(o.density >= 0.72) t.push("고밀도: 열을 늦게 받으므로 초반 화력을 강하게, 열량을 충분히 주세요.");
       else if(o.density <= 0.65) t.push("저밀도: 과열·스코칭에 주의하고 초반 화력을 낮추세요.");
-    }
+    } else if(o.alt >= 1500) t.push(`재배고도 ${o.alt.toLocaleString("ko-KR")}m 이상: 고지대라 고밀도일 가능성이 높습니다. 밀도를 실측하기 전까지는 초반 열량이 부족하지 않게 보세요.`);
     if(o.moist != null && !isNaN(o.moist)){
       if(o.moist > 12) t.push("수분 12% 초과: 건조 구간이 길어지므로 초반 열량을 더 주세요.");
       else if(o.moist < 10) t.push("수분 10% 미만: 빨리 익을 수 있으니 화력을 약간 낮추세요.");
@@ -791,14 +797,24 @@ const app = {
         texts.push((await w.recognize(blob)).data.text); await w.terminate();
       }
       $("ocr-text").textContent = "[한글]\n" + texts[0] + "\n[영문·숫자]\n" + texts[1]; $("ocr-raw").hidden = false;
-      const r = this.parseBeanText(texts[0], texts[1]), got = this.fillBeanForm(r);
-      st.innerHTML = got.found.length
-        ? `<b>인식 완료.</b> 아래 「생두 직접 등록」 폼에 채웠습니다. 읽은 항목: ${esc(got.found.join(", "))}. 못 읽은 항목: ${esc(got.missing.join(", ") || "없음")}. 값이 맞는지 확인하고, 구입량(kg)을 입력한 뒤 등록하세요.`
-          + (r.prices.length || r.kgs.length ? `<br>페이지에서 본 가격·용량 후보: ${esc([...r.prices.map(p => p + "원"), ...r.kgs.map(x => x + "kg")].join(", "))} (어느 것이 구입 옵션인지 직접 확인해 입력하세요)` : "")
-        : "글자를 거의 읽지 못했습니다. 글자가 크고 선명한 화면 캡처로 다시 시도하거나, 아래 폼에 직접 입력해 주세요.";
+      this.showParsed(this.parseBeanText(texts[0], texts[1]), "인식 완료.", "글자를 거의 읽지 못했습니다. 글자가 크고 선명한 화면 캡처로 다시 시도하거나, 아래 폼에 직접 입력해 주세요.");
     } catch(e){
       st.textContent = "사진 인식을 사용할 수 없습니다: " + (e && e.message ? e.message : e) + " — 웹 주소로 설치한 앱에서 사용해 주세요. 아래 폼에 직접 입력해도 됩니다.";
     } finally { this.ocrBusy = false; $("ocr-file").value = ""; }
+  },
+  readPasted(){
+    const t = $("paste-text").value;
+    if(!t.trim()) return this.notify("상품 페이지 글을 먼저 붙여 넣어 주세요.");
+    $("ocr-raw").hidden = true;
+    this.showParsed(this.parseBeanText(t, t), "읽기 완료.", "생두 정보를 찾지 못했습니다. 세웅지씨·커피리브레 상품 상세 페이지 글 전체를 붙여 넣었는지 확인해 주세요.");
+  },
+  showParsed(r, okMsg, failMsg){
+    const got = this.fillBeanForm(r);
+    $("ocr-status").innerHTML = got.found.length
+      ? `<b>${esc(okMsg)}</b> 아래 「생두 직접 등록」 폼에 채웠습니다. 읽은 항목: ${esc(got.found.join(", "))}. 못 읽은 항목: ${esc(got.missing.join(", ") || "없음")}. 값이 맞는지 확인하고, 구입량(kg)을 입력한 뒤 등록하세요.`
+        + (r.price ? `<br>가격 ${r.price.toLocaleString("ko-KR")}원을 kg당 가격으로 넣었습니다(두 판매처 모두 기본가가 1kg 기준). 할인·대용량 옵션이면 고쳐 주세요.`
+          : r.prices.length || r.kgs.length ? `<br>페이지에서 본 가격·용량 후보: ${esc([...r.prices.map(p => p + "원"), ...r.kgs.map(x => x + "kg")].join(", "))} (어느 것이 구입 옵션인지 직접 확인해 입력하세요)` : "")
+      : failMsg;
   },
   // 품종: 영문·숫자 오인식(SL28 → 5128 등)을 지식 베이스의 품종 목록으로 바로잡는다.
   fixVariety(raw){
@@ -806,54 +822,102 @@ const app = {
     const s = String(raw).replace(/\s+/g, ""), hit = x => known.find(n => n.toLowerCase() === x.toLowerCase());
     return hit(s) || hit(s.replace(/^5/, "S").replace(/^S[1Il|]/, "SL")) || String(raw).trim();
   },
-  // 한글 항목은 kor 결과, 이름·영문은 kor+eng 결과를 쓰고, 라벨(가공방식, 품종 등) 뒤의 값만 읽는다.
+  // 세웅지씨·커피리브레 상세 페이지의 공통 항목을 읽는다. 「라벨 : 값」(커피리브레)과 「라벨 줄 / 값 줄」(세웅지씨, "01. 국가/수확년도"처럼 번호 포함)을 모두 처리.
+  // 한글 항목은 kor 결과, 이름·영문은 kor+eng 결과를 우선한다(붙여 넣은 글은 둘이 같다).
   parseBeanText(korText, mixText){
     const toLines = t => String(t || "").split("\n").map(s => s.replace(/\s+/g, " ").trim()).filter(Boolean);
     const A = toLines(korText), B = toLines(mixText);
-    const wordOk = /^[가-힣A-Za-z0-9·().,'-]+$/, wordNoDigit = /^[가-힣A-Za-z·().,'-]+$/;
+    const wordOk = /^[가-힣A-Za-z0-9·().,'&-]+$/, wordNoDigit = /^[가-힣A-Za-z·().,'-]+$/;
     const clean = (s, re) => { const out = []; for(const t of s.split(" ")){ if(re.test(t)) out.push(t); else break; } return out.join(" "); };
-    const rawOf = (lines, label) => { const pat = new RegExp("^" + label.split("").join("\\s*") + "\\s*[:：;]\\s*(.+)$"); for(const l of lines){ const m = l.match(pat); if(m) return m[1]; } return ""; };
-    const find = (label, re) => clean(rawOf(A, label), re) || clean(rawOf(B, label), re);
-    const out = {name: "", notes: "", country: "", region: "", farm: "", variety: "", process: "", kind: "", altitude: null, arrived: "", prices: [], kgs: []};
-    const producer = find("생산자", wordNoDigit), plant = find("가공소", wordNoDigit);
-    out.farm = producer && plant ? `${producer} (${plant})` : producer || plant;
-    out.region = find("지역", wordNoDigit);
+    const labPat = l => l.replace(/\s/g, "").split("").map(c => c.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("\\s*");
+    const rawOf = (lines, labels) => {
+      for(const label of [].concat(labels)){
+        const p = "^(?:\\d{1,2}\\.\\s*)?" + labPat(label), inline = new RegExp(p + "\\s*[:：;]\\s*(.+)$"), alone = new RegExp(p + "\\s*[:：;]?$");
+        for(let i = 0; i < lines.length; i++){
+          const m = lines[i].match(inline); if(m) return m[1].trim();
+          // 값이 비어 다음 번호 라벨(「05. 농장」 다음 「02. 지역」)이 바로 오면 건너뛴다
+          if(alone.test(lines[i]) && lines[i + 1] && !/^\d{1,2}\.\s*[가-힣]/.test(lines[i + 1])) return lines[i + 1];
+        }
+      }
+      return "";
+    };
+    const find = (labels, re) => clean(rawOf(A, labels), re) || clean(rawOf(B, labels), re);
+    const any = labels => rawOf(A, labels) || rawOf(B, labels);
+    const out = {name: "", cup: "", extra: [], country: "", region: "", farm: "", variety: "", process: "", kind: "", grade: "", altitude: null, altitudeRange: null,
+      harvestYear: null, arrived: "", moisture: null, price: null, supplier: "", prices: [], kgs: []};
+    const countries = ["케냐","에티오피아","콜롬비아","과테말라","코스타리카","브라질","파나마","예멘","인도네시아","베트남","르완다","부룬디","탄자니아","엘살바도르","온두라스","페루","인도","멕시코","니카라과","우간다","볼리비아","에콰도르","자메이카","하와이","파푸아뉴기니","라오스","태국","미얀마","도미니카","콩고"];
+    // 이름: 커피리브레 「[New Crop / 생두] 국가 / 다음 줄 이름」, 세웅지씨 「정가·판매가」 바로 윗줄
+    const nc = B.findIndex(l => /^\[\s*new\s*crop[^\]]*\]/i.test(l));
+    if(nc >= 0){
+      let n = B[nc].replace(/^\[[^\]]*\]\s*/, "");
+      if((!n || countries.includes(n)) && B[nc + 1] && /[가-힣]/.test(B[nc + 1]) && !/원$/.test(B[nc + 1])) n = (n + " " + B[nc + 1]).trim();
+      out.name = n;
+    } else {
+      const pz = B.findIndex(l => /^(정가|판매가)$/.test(l));
+      if(pz > 0){ let i = pz - 1; while(i > 0 && /^\d+$/.test(B[i])) i--; out.name = B[i]; }
+    }
+    const station = find(["워싱스테이션", "마이크로밀", "가공소", "농장"], wordOk), producer = find(["생산자", "농장주"], wordOk);
+    out.farm = producer && station ? `${producer} (${station})` : producer || station;
+    out.region = find(["지역", "생산지역"], wordNoDigit);
     const v = find("품종", wordOk); out.variety = v ? this.fixVariety(v) : "";
-    const pr = find("가공방식", wordNoDigit).toLowerCase();
-    out.process = /워시드|washed|수세/.test(pr) ? "워시드" : /내추럴|natural|건식/.test(pr) ? "내추럴" : /허니|honey/.test(pr) ? "허니" : /무산소|아나|anaerobic|카보닉/.test(pr) ? "무산소" : "";
-    const alt = rawOf(A, "재배고도") || rawOf(B, "재배고도") || rawOf(A, "고도") || rawOf(B, "고도");
+    // 가공: 라벨 값을 우선(「코케 허니」처럼 지명에 든 낱말 오인 방지), 이름에 ASD·무산소가 있으면 무산소
+    const procOf = s => { s = s.toLowerCase(); return /무산소|어내로빅|아나에로빅|anaerob|\basd\b|카보닉|carbonic/.test(s) ? "무산소" : /허니|honey/.test(s) ? "허니" : /내추럴|네추럴|natural|건식/.test(s) ? "내추럴" : /워시드|washed|수세/.test(s) ? "워시드" : ""; };
+    out.process = procOf(out.name) === "무산소" ? "무산소" : procOf(any("가공방식")) || procOf(out.name);
+    const alt = any(["재배고도", "고도"]);
     const nums = (alt.match(/\d[\d,]*/g) || []).map(x => +x.replace(/,/g, "")).filter(n => n >= 300 && n <= 3000);
-    out.altitude = nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : null;
-    const dm = (rawOf(A, "입고일자") || rawOf(B, "입고일자")).match(/(\d{2,4})\s*[.\/-]\s*(\d{1,2})\s*[.\/-]\s*(\d{1,2})/);
+    if(nums.length){ const lo = Math.min(...nums), hi = Math.max(...nums); out.altitudeRange = [lo, hi]; out.altitude = Math.round((lo + hi) / 2); }
+    const dm = any(["입고일자", "입고일"]).match(/(\d{2,4})\s*[.\/-]\s*(\d{1,2})\s*[.\/-]\s*(\d{1,2})/);
     if(dm){ const y = +dm[1] < 100 ? 2000 + +dm[1] : +dm[1]; out.arrived = `${y}-${String(dm[2]).padStart(2, "0")}-${String(dm[3]).padStart(2, "0")}`; }
-    const labelRe = new RegExp("^(" + ["가공소","생산자","지역","재배고도","품종","가공방식","입고일자"].map(l => l.split("").join("\\s*")).join("|") + ")\\s*[:：;]");
+    // 수확연도: 세웅지씨 「국가/수확년도」, 없으면 두 판매처 모두 상품명에 붙이는 연도(지식 베이스 8장: 연도 표기 = 신규 입고·뉴크롭)
+    const hy = any(["국가/수확년도", "수확년도", "수확연도"]).match(/20\d{2}/) || out.name.match(/(?:^|\D)(20\d{2})(?!\d)/);
+    if(hy) out.harvestYear = +(hy[1] || hy[0]);
+    out.grade = find("등급", wordOk) || (out.name.match(/(?:^|[\s(])(G[1-5]|AA|AB|PB|SHB|SHG|Supremo|Excelso|수프리모)(?=$|[\s)])/i) || [])[1] || "";
+    const mv = any(["수분율/밀도", "수분율", "수분"]), mm = mv.match(/(\d+(?:\.\d+)?)\s*%/), gl = mv.match(/(\d{3}(?:\.\d+)?)\s*g\s*\/\s*l/i);
+    if(mm && +mm[1] >= 5 && +mm[1] <= 20) out.moisture = +mm[1];
+    if(gl) out.extra.push(`판매처 밀도 ${gl[1]} g/L (측정 방식이 지식 베이스의 간이 밀도(g/ml)와 달라 로스팅 보정에는 쓰지 않음)`);
+    const sr = any("로스팅");
+    if(/light|medium|dark|라이트|미디엄|다크|시티/i.test(sr)) out.extra.push("판매처 추천 로스팅: " + sr);
+    // 컵 노트: 세웅지씨는 라벨, 커피리브레는 라벨 없이 「체리, 포도잼, 황도」처럼 쉼표로 나열
+    out.cup = any(["커핑 노트", "플레이버 노트", "향미 노트", "컵 노트"]) || B.find(l => { const p = l.split(/[,，]/).map(s => s.trim()); return p.length >= 3 && p.every(s => s && s.length <= 12 && /[가-힣]/.test(s) && !/\d|원/.test(s)); }) || "";
+    // 라벨 없는 사진(예전 캡처 형식): 라벨 블록 바로 윗줄이 컵 노트, 그 위가 이름
+    const labelRe = new RegExp("^(" + ["가공소","생산자","지역","재배고도","품종","가공방식","입고일자"].map(labPat).join("|") + ")\\s*[:：;]");
     const k = B.findIndex(l => labelRe.test(l));
-    if(k > 0){
+    if(k > 0 && !out.name){
       const isNotes = l => l && l.split(" ").length >= 3 && (l.match(/[가-힣]/g) || []).length >= l.replace(/\s/g, "").length * 0.7;
       let i = k - 1;
-      if(isNotes(B[i])){ out.notes = B[i]; i--; }
+      if(isNotes(B[i])){ if(!out.cup) out.cup = B[i]; i--; }
       if(i >= 0 && /^[A-Za-z0-9 .'&-]+$/.test(B[i])) i--;
       if(i >= 0) out.name = B[i].replace(/[^가-힣A-Za-z0-9 .'&()-]/g, "").replace(/\s+/g, " ").trim();
     }
-    const countries = ["케냐","에티오피아","콜롬비아","과테말라","코스타리카","브라질","파나마","예멘","인도네시아","베트남","르완다","부룬디","탄자니아","엘살바도르","온두라스","페루","인도","멕시코","니카라과","우간다","볼리비아","에콰도르","자메이카","하와이","파푸아뉴기니","라오스","태국","미얀마","도미니카","콩고"];
-    const all = A.join(" ");
-    out.country = countries.find(c => out.name.includes(c)) || countries.find(c => all.includes(c)) || "";
+    const all = A.join(" "), ov = any(["원산지", "국가"]);
+    out.country = countries.find(c => ov.includes(c)) || countries.find(c => out.name.includes(c)) || countries.find(c => all.includes(c)) || "";
     const idText = (out.name + " " + out.variety).toLowerCase();
-    out.kind = /게이샤|geisha|gesha/.test(idText) ? "gesha" : /예멘|yemen/.test(idText) ? "yemen" : /엑셀사|excelsa/.test(idText) ? "excelsa" : /로부스타|robusta|cxr/.test(idText) ? "robusta" : "";
+    out.kind = /게이샤|게샤|geisha|gesha/.test(idText) ? "gesha" : /예멘|yemen/.test(idText) ? "yemen" : /엑셀사|excelsa/.test(idText) ? "excelsa" : /로부스타|robusta|cxr/.test(idText) ? "robusta" : "";
+    // 가격: 두 판매처 모두 기본가가 1kg 기준(대용량은 옵션 추가금). 세웅지씨는 「판매가」 아래, 커피리브레는 이름 아래 첫 「…원」 줄
+    const priceIn = s => { const m = String(s).match(/^([0-9][0-9,]{3,})\s*원$/); return m ? +m[1].replace(/,/g, "") : null; };
+    const pv = B.findIndex(l => l === "판매가");
+    for(const [from, n] of [[pv, 3], [nc, 5]]) if(from >= 0) for(let i = from + 1; i <= from + n && i < B.length && !out.price; i++) out.price = priceIn(B[i]);
     const both = A.join("\n") + "\n" + B.join("\n");
+    out.supplier = /커피\s*리브레|coffee\s*libre/i.test(both) ? "커피리브레" : /세웅|sewoong|SW\.ONLY/i.test(both) ? "세웅지씨" : "";
     out.prices = [...new Set([...both.matchAll(/([0-9][0-9,]{3,})\s*원/g)].map(m => m[1]))].slice(0, 4);
     out.kgs = [...new Set([...both.matchAll(/(\d+(?:\.\d+)?)\s*kg/gi)].map(m => m[1]))].slice(0, 4);
     return out;
   },
+  // 지식 베이스 8장: 상품명의 올해 연도 표기는 신규 입고·뉴크롭. 그보다 이전 연도는 판단 근거가 없어 비워 둔다.
+  cropOf(year){ return year && year >= new Date().getFullYear() ? "new" : ""; },
+  altText(o){ const r = o.altitudeRange; return r && r[0] !== r[1] ? `${r[0]}~${r[1]}` : r ? String(r[0]) : o.altitude ? String(o.altitude) : ""; },
   fillBeanForm(r){
     const set = (id, val) => { if(val != null && val !== "") $(id).value = val; };
     set("nb-name", r.name); set("nb-origin", [r.country, r.region].filter(Boolean).join(" / ")); set("nb-farm", r.farm);
-    set("nb-variety", r.variety); set("nb-alt", r.altitude); set("nb-arrived", r.arrived); set("nb-notes", r.notes ? "컵 노트: " + r.notes : "");
+    set("nb-variety", r.variety); set("nb-alt", this.altText(r)); set("nb-arrived", r.arrived); set("nb-grade", r.grade); set("nb-harvest", r.harvestYear);
+    set("nb-cup", r.cup); set("nb-moist", r.moisture); set("nb-price", r.price); set("nb-supplier", r.supplier); set("nb-notes", r.extra.join("\n"));
     if(r.process) $("nb-process").value = r.process;
     if(r.kind) $("nb-kind").value = r.kind;
-    const items = [["이름", r.name], ["생산국", r.country], ["지역", r.region], ["생산자·가공소", r.farm], ["품종", r.variety], ["가공방식", r.process], ["고도", r.altitude], ["입고일자", r.arrived], ["컵 노트", r.notes]];
+    if(this.cropOf(r.harvestYear)) $("nb-crop").value = this.cropOf(r.harvestYear);
+    const items = [["이름", r.name], ["생산국", r.country], ["지역", r.region], ["농장·생산자", r.farm], ["품종", r.variety], ["가공방식", r.process], ["재배고도", r.altitude], ["수확연도", r.harvestYear], ["컵 노트", r.cup]];
+    const opt = [["등급", r.grade], ["입고일자", r.arrived], ["수분", r.moisture], ["가격", r.price], ["구입처", r.supplier]].filter(x => x[1]);
     $("nb-box").open = true;
-    return {found: items.filter(x => x[1]).map(x => x[0]), missing: items.filter(x => !x[1]).map(x => x[0])};
+    return {found: [...items, ...opt].filter(x => x[1]).map(x => x[0]), missing: items.filter(x => !x[1]).map(x => x[0])};
   },
   // 앱에서 직접 등록: 입력 조건 → 프로파일 선택(지식 베이스 4장) → 배치 계획(고가 생두는 4.1장·7.2장)
   addBean(){
@@ -873,12 +937,15 @@ const app = {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "bean";
     const id = d.slice(0, 7) + "-" + slug + "-" + Date.now().toString(36).slice(-4);
     const [country, ...rest] = v("nb-origin").split("/").map(s => s.trim());
-    this.beans[id] = {id, name, status: "active", origin: {country: country || "", region: rest.join(" / "), farm: v("nb-farm"), altitude: num("nb-alt")},
-      variety: v("nb-variety"), process, crop: v("nb-crop"), supplier: v("nb-supplier"), purchasedAt: d, arrivedAt: v("nb-arrived") || null, purchasedG: Math.round(kg * 1000),
+    const an = (v("nb-alt").match(/\d[\d,]*/g) || []).map(x => +x.replace(/,/g, "")).filter(n => n > 0), altR = an.length ? [Math.min(...an), Math.max(...an)] : null;
+    const hy = num("nb-harvest") ? Math.round(num("nb-harvest")) : null;
+    this.beans[id] = {id, name, status: "active", origin: {country: country || "", region: rest.join(" / "), farm: v("nb-farm"), altitude: altR ? Math.round((altR[0] + altR[1]) / 2) : null, altitudeRange: altR},
+      variety: v("nb-variety"), process, grade: v("nb-grade"), harvestYear: hy, crop: v("nb-crop") || this.cropOf(hy), cupNotes: v("nb-cup"),
+      supplier: v("nb-supplier"), purchasedAt: d, arrivedAt: v("nb-arrived") || null, purchasedG: Math.round(kg * 1000),
       pricePerKg: num("nb-price"), density: num("nb-density"), moisture: num("nb-moist"), expensive, profileId,
       targetLevel: v("nb-level") || levelOf(mid).key, adjustments: [], batchPlan: plan, notes: v("nb-notes"), batches: []};
     this.saveBeans(); this.openGuide[id] = true; this.renderBeans();
-    ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-alt","nb-density","nb-moist","nb-price","nb-supplier","nb-date","nb-notes"].forEach(f => { $(f).value = ""; });
+    ["nb-name","nb-origin","nb-farm","nb-arrived","nb-variety","nb-grade","nb-harvest","nb-alt","nb-density","nb-moist","nb-price","nb-supplier","nb-date","nb-cup","nb-notes","paste-text"].forEach(f => { $(f).value = ""; });
     $("nb-kg").value = "1";
     $("nb-crop").value = "";
     $("nb-expensive").checked = false; $("nb-box").open = false;
@@ -903,15 +970,18 @@ const app = {
     const p = this.profileOf(bean), lv = this.beanLevel(bean), o = bean.origin || {};
     const ce = this.estimateCharge({profileId: bean.profileId, density: bean.density, moisture: bean.moisture, crop: bean.crop});
     const rng = a => `${mmss(a[0])} ~ ${mmss(a[1])}`;
-    const auto = this.tips({density: bean.density, moist: bean.moisture, crop: bean.crop, expensive: bean.expensive, process: bean.process, kind: bean.profileId === "yemen" ? "yemen" : ""});
+    const auto = this.tips({density: bean.density, moist: bean.moisture, crop: bean.crop, expensive: bean.expensive, process: bean.process, kind: bean.profileId === "yemen" ? "yemen" : "",
+      alt: o.altitudeRange ? o.altitudeRange[0] : o.altitude});
     const adj = [...(bean.adjustments || [])]; auto.forEach(t => { if(!adj.includes(t)) adj.push(t); });
     if(!bean.crop && bean.arrivedAt){
       const mo = Math.floor((Date.now() - new Date(bean.arrivedAt)) / 2629800000);
       if(mo >= 3) adj.push(`수확연도 미확인 (입고 후 ${mo}개월 경과): 수분·밀도를 실측하고, 평소보다 빨리 익거나 향이 약하면 올드크롭처럼 화력을 약간 낮추세요.`);
     }
     const dg = DEGAS[(lv.key === "light" || lv.key === "medlight") ? "drip-light" : "drip-medium"];
-    const rows = [["생산지", [o.country, o.region, o.farm].filter(Boolean).join(" / ") || "-"], ["품종·가공", [bean.variety, bean.process].filter(Boolean).join(" · ") || "-"],
-      ["고도·수확", [o.altitude ? o.altitude + "m" : "", bean.crop === "old" ? "올드크롭" : bean.crop === "new" ? "뉴크롭" : "수확연도 미확인"].filter(Boolean).join(" · ") || "-"], ["입고", bean.arrivedAt || "-"],
+    const alt = this.altText(o);
+    const rows = [["생산지", [o.country, o.region, o.farm].filter(Boolean).join(" / ") || "-"], ["품종·가공", [bean.variety, bean.process, bean.grade].filter(Boolean).join(" · ") || "-"],
+      ["고도·수확", [alt ? alt + "m" : "", bean.harvestYear ? bean.harvestYear + "년 수확" : "", bean.crop === "old" ? "올드크롭" : bean.crop === "new" ? "뉴크롭" : bean.harvestYear ? "" : "수확연도 미확인"].filter(Boolean).join(" · ") || "-"],
+      ...(bean.cupNotes ? [["컵 노트", bean.cupNotes]] : []), ["입고", bean.arrivedAt || "-"],
       ["밀도·수분", `${bean.density ?? "-"} g/ml · ${bean.moisture ?? "-"}%`], ["구입", `${esc(bean.supplier || "-")} · ${bean.purchasedAt || "-"} · ${bean.pricePerKg ? bean.pricePerKg.toLocaleString("ko-KR") + "원/kg" : "-"}`]];
     return `<hr style="border:0;border-top:1px solid var(--line)">
       <h2>생두 요약</h2><div class="kv">${rows.map(([k, v]) => `<b>${k}</b><span>${k === "구입" ? v : esc(v)}</span>`).join("")}</div>
@@ -1120,8 +1190,11 @@ const app = {
       <div><label>구입일</label><input class="ed-pdate" type="date" value="${esc(b.purchasedAt || "")}"></div>
       <div><label>밀도 (g/ml)</label><input class="ed-density" type="number" step="0.01" value="${b.density ?? ""}"></div>
       <div><label>수분 (%)</label><input class="ed-moist" type="number" step="0.1" value="${b.moisture ?? ""}"></div>
-      <div><label>수확연도</label><select class="ed-crop"><option value="" ${sel("", b.crop)}>미확인</option><option value="new" ${sel("new", b.crop)}>뉴크롭</option><option value="old" ${sel("old", b.crop)}>올드크롭</option></select></div>
+      <div><label>등급</label><input class="ed-grade" value="${esc(b.grade || "")}"></div>
+      <div><label>수확연도</label><input class="ed-harvest" type="number" value="${b.harvestYear ?? ""}"></div>
+      <div><label>뉴/올드크롭</label><select class="ed-crop"><option value="" ${sel("", b.crop)}>미확인</option><option value="new" ${sel("new", b.crop)}>뉴크롭</option><option value="old" ${sel("old", b.crop)}>올드크롭</option></select></div>
       <div><label>상태</label><select class="ed-status"><option value="active" ${sel("active", b.status === "consumed" ? "consumed" : "active")}>사용 중</option><option value="consumed" ${sel("consumed", b.status)}>소비 완료</option></select></div></div>
+      <label style="margin-top:8px">컵 노트</label><input class="ed-cup" value="${esc(b.cupNotes || "")}">
       <div class="row" style="margin-top:8px"><button class="pri" onclick="app.saveBeanEdit(this)">저장</button><button class="sec" onclick="app.cancelEdit()">취소</button></div></div>`;
   },
   saveBeanEdit(btn){
@@ -1131,7 +1204,8 @@ const app = {
     if(!(kg > 0)) return this.notify("구입량(kg)을 입력해 주세요.");
     const num = sel => { const x = parseFloat(q(sel)); return isNaN(x) ? null : x; };
     const e = {name: q(".ed-name").trim(), purchasedG: Math.round(kg * 1000), pricePerKg: num(".ed-price"), supplier: q(".ed-supplier").trim(), purchasedAt: q(".ed-pdate") || b.purchasedAt,
-      density: num(".ed-density"), moisture: num(".ed-moist"), crop: q(".ed-crop"), status: q(".ed-status")};
+      density: num(".ed-density"), moisture: num(".ed-moist"), crop: q(".ed-crop"), status: q(".ed-status"),
+      grade: q(".ed-grade").trim(), harvestYear: num(".ed-harvest") ? Math.round(num(".ed-harvest")) : null, cupNotes: q(".ed-cup").trim()};
     Object.assign(b, e); this.edits[b.id] = e; this.saveEdits(); this.saveBeans();
     this.editing = null; this.renderBeans(); this.renderLog(); this.notify("수정했습니다.");
   },
