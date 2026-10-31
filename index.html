@@ -51,6 +51,9 @@ ul{margin:6px 0;padding-left:20px}
 .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;max-width:520px;width:100%;display:grid;gap:10px}
 .box textarea{font:12px/1.4 ui-monospace,monospace}
 #toast{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:520px;margin:auto;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:10px;z-index:60}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.chips button.on{background:var(--accent);border-color:var(--accent);color:var(--on)}
 .evbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:10px 0}
 #run{position:fixed;inset:0;z-index:40;background:var(--bg);display:flex;flex-direction:column;gap:10px;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));max-width:700px;margin:0 auto}
 .run-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;color:var(--mute)}
@@ -197,7 +200,7 @@ ul{margin:6px 0;padding-left:20px}
 <section id="t-day">
   <div id="day-result"></div>
   <div class="card">
-    <h2>오늘 로스팅 계획</h2>
+    <h2>로스팅 계획</h2>
     <p class="small">생두마다 배치 수와 배치당 투입량을 정하면 아래에 한 페이지 가이드가 만들어집니다. 생두를 여러 종 이어서 볶아도 됩니다.</p>
     <div id="day-rows"></div>
     <div class="row" style="margin-top:8px">
@@ -224,11 +227,24 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>가공</label><select id="bf-proc" onchange="app.buyRender()"><option value="">전체</option><option>워시드</option><option>내추럴</option><option>허니</option><option>무산소</option><option>디카페인</option><option>기타</option></select></div>
       <div><label>등급</label><select id="bf-tier" onchange="app.buyRender()"><option value="">전체</option><option>커머셜</option><option>하이커머셜</option><option>스페셜티</option><option>마이크로랏</option></select></div>
       <div><label>품종·트렌드</label><select id="bf-var" onchange="app.buyRender()"></select></div>
-      <div><label>향미</label><select id="bf-flavor" onchange="app.buyRender()"></select></div>
+      <div><label>생산·입고 연도</label><select id="bf-year" onchange="app.buyRender()"></select></div>
       <div><label>추천 배전도</label><select id="bf-level" onchange="app.buyRender()"></select></div>
       <div><label>1kg 최대 가격 (원)</label><input id="bf-max" type="number" inputmode="numeric" placeholder="예: 30000" oninput="app.buyRender()"></div>
-      <div><label>정렬</label><select id="bf-sort" onchange="app.buyRender()"><option value="value">가성비 높은 순</option><option value="low">가격 낮은 순</option><option value="high">가격 높은 순</option><option value="new">신규 입고 먼저</option></select></div>
+      <div><label>정렬</label><select id="bf-sort" onchange="app.buyRender()"><option value="value">가성비 높은 순</option><option value="low">가격 낮은 순</option><option value="high">가격 높은 순</option><option value="new">신규 입고 먼저</option><option value="year">최근 연도 먼저</option><option value="score">컵 점수 높은 순</option></select></div>
     </div>
+    <details id="bf-flavor-box" style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">향미 고르기 <span id="bf-flavor-sum" class="small"></span></summary>
+      <div class="row" style="margin:8px 0">
+        <label style="margin:0"><input type="radio" name="bf-fmode" value="all" checked style="width:auto" onchange="app.buyRender()"> 고른 향미를 모두 가진 생두</label>
+        <label style="margin:0"><input type="radio" name="bf-fmode" value="any" style="width:auto" onchange="app.buyRender()"> 하나라도 가진 생두</label>
+        <button class="sec" onclick="app.flavorSel = []; app.buyFlavorChips(); app.buyRender()">향미 선택 지우기</button>
+      </div>
+      <div id="bf-flavors" class="chips"></div>
+      <p class="small">향미 분류는 세웅지씨 생두찾기의 향미 항목(동의어 포함)으로, 세 판매처의 컵 노트에 똑같이 적용합니다. 괄호 안은 해당 생두 수입니다.</p>
+    </details>
+    <details id="bf-score-box" style="margin-top:6px"><summary style="cursor:pointer;font-weight:600">컵 프로파일 점수로 고르기 <span id="bf-score-sum" class="small"></span></summary>
+      <div class="grid" style="margin-top:8px" id="bf-scores"></div>
+      <p class="small">향미·산미·단맛·바디감·밸런스 점수(5점 만점)는 <b>세웅지씨 상품에만</b> 있습니다. 점수 조건을 하나라도 고르면 세웅지씨 생두만 남습니다. 판매처가 매긴 점수라 지식 베이스의 평가 기준과는 별개입니다.</p>
+    </details>
     <div class="row" style="margin-top:8px">
       <label style="margin:0"><input type="checkbox" id="bf-stock" checked style="width:auto" onchange="app.buyRender()"> 품절 빼기</label>
       <label style="margin:0"><input type="checkbox" id="bf-new" style="width:auto" onchange="app.buyRender()"> 신규 입고만</label>
@@ -425,7 +441,7 @@ const app = {
   ],
 
   init(){
-    const tabs = [["beans","내 생두"],["day","오늘 로스팅"],["buy","생두 구매"],["log","배치 기록"],["brew","추출·숙성"],["diag","진단"],["plan","프로파일 추천"],["roast","상세 세션"]];
+    const tabs = [["buy","생두 구매"],["beans","내 생두"],["day","로스팅"],["brew","추출·숙성"],["log","배치 기록"],["diag","진단"],["plan","프로파일 추천"],["roast","상세 세션"]];
     $("tabs").innerHTML = tabs.map(([k,l]) => `<button data-t="${k}" onclick="app.tab('${k}')">${l}</button>`).join("");
     $("r-profile").innerHTML = PROFILES.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
     $("r-events").innerHTML = this.EVENTS.map(e => `<button class="${e.drop?"pri":"sec"}" id="ev-${e.k}" onclick="app.mark('${e.k}')" disabled>${e.label}</button>`).join("");
@@ -928,6 +944,9 @@ const app = {
       it.value = it.median ? Math.round(it.median / it.price * 100) : null;
       it.practice = it.processKey === "워시드" && it.price >= 18000 && it.price <= 25000;
       it.scoreSum = it.scores ? Object.values(it.scores).reduce((a, b) => a + b, 0) : null;
+      // 생산연도(상품명·「국가/수확년도」), 없으면 입고일자(커피리브레 「26.08.04」)의 연도
+      const ay = /^(\d{2})\.\d{2}\.\d{2}$/.exec(it.arrived || "");
+      it.year = it.harvest || (ay ? 2000 + +ay[1] : null); it.yearKind = it.harvest ? "생산" : ay ? "입고" : "";
     });
   },
   buyFilters(){
@@ -935,21 +954,43 @@ const app = {
     const countries = [...new Set(m.items.map(i => i.country).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
     $("bf-country").innerHTML = opt(countries, "전체");
     $("bf-var").innerHTML = opt(m.varieties.map(v => v.key), "전체");
-    $("bf-flavor").innerHTML = opt(m.flavors.map(f => f.key).filter(k => m.items.some(i => i.flavors.includes(k))), "전체");
+    const years = [...new Set(m.items.map(i => i.year).filter(Boolean))].sort((a, b) => b - a);
+    $("bf-year").innerHTML = '<option value="">전체</option>' + years.map(y => `<option value="${y}">${y}년 (${m.items.filter(i => i.year === y).length})</option>`).join("") + `<option value="none">연도 표기 없음 (${m.items.filter(i => !i.year).length})</option>`;
+    this.flavorCount = {}; m.items.forEach(i => i.flavors.forEach(f => { this.flavorCount[f] = (this.flavorCount[f] || 0) + 1; }));
+    this.buyFlavorChips();
+    $("bf-scores").innerHTML = this.SCORE_KEYS.map(k => `<div><label>${k}</label><select class="bf-score" data-k="${k}" onchange="app.buyRender()"><option value="">상관없음</option>${[5, 4.5, 4, 3.5, 3].map(v => `<option value="${v}">${v} 이상</option>`).join("")}</select></div>`).join("");
     $("bf-level").innerHTML = '<option value="">전체</option>' + LEVELS.map(l => `<option value="${l.key}">${l.name}</option>`).join("");
   },
-  buyReset(){ ["bf-q", "bf-site", "bf-country", "bf-proc", "bf-tier", "bf-var", "bf-flavor", "bf-level", "bf-max"].forEach(id => { $(id).value = ""; }); $("bf-new").checked = $("bf-practice").checked = false; $("bf-stock").checked = true; this.buyRender(); },
+  SCORE_KEYS: ["향미", "산미", "단맛", "바디감", "밸런스"], flavorSel: [], flavorCount: {},
+  // 향미 칩: 생두 수가 많은 순, 누르면 켜고 끔
+  buyFlavorChips(){
+    const keys = Object.keys(this.flavorCount).sort((a, b) => this.flavorCount[b] - this.flavorCount[a]);
+    $("bf-flavors").innerHTML = keys.map(k => `<button class="${this.flavorSel.includes(k) ? "on" : ""}" onclick="app.buyFlavor('${k.replace(/'/g, "")}')">${esc(k)} (${this.flavorCount[k]})</button>`).join("");
+  },
+  buyFlavor(k){ this.flavorSel = this.flavorSel.includes(k) ? this.flavorSel.filter(x => x !== k) : [...this.flavorSel, k]; this.buyFlavorChips(); this.buyRender(); },
+  buyReset(){ ["bf-q", "bf-site", "bf-country", "bf-proc", "bf-tier", "bf-var", "bf-year", "bf-level", "bf-max"].forEach(id => { $(id).value = ""; });
+    document.querySelectorAll(".bf-score").forEach(x => { x.value = ""; }); this.flavorSel = []; this.buyFlavorChips(); $("bf-new").checked = $("bf-practice").checked = false; $("bf-stock").checked = true; this.buyRender(); },
   buyList(){
     const v = id => $(id).value, q = v("bf-q").trim().toLowerCase(), max = parseFloat(v("bf-max"));
+    const fsel = this.flavorSel, any = (document.querySelector('input[name="bf-fmode"]:checked') || {}).value === "any";
+    const fl = i => !fsel.length || (any ? fsel.some(f => i.flavors.includes(f)) : fsel.every(f => i.flavors.includes(f)));
+    const mins = [...document.querySelectorAll(".bf-score")].filter(x => x.value).map(x => [x.dataset.k, +x.value]);
+    const sc = i => !mins.length || (i.scores && mins.every(([k, m]) => (i.scores[k] ?? 0) >= m));
+    $("bf-flavor-sum").textContent = fsel.length ? `· ${fsel.join(", ")} (${any ? "하나라도" : "모두"})` : "";
+    $("bf-score-sum").textContent = mins.length ? "· " + mins.map(([k, m]) => `${k} ${m}↑`).join(", ") : "";
     let a = this.market.items.filter(i => (!v("bf-site") || i.site === v("bf-site")) && (!v("bf-country") || i.country === v("bf-country"))
       && (!v("bf-proc") || i.processKey === v("bf-proc")) && (!v("bf-tier") || i.tier === v("bf-tier"))
-      && (!v("bf-var") || i.varietyTags.includes(v("bf-var"))) && (!v("bf-flavor") || i.flavors.includes(v("bf-flavor")))
+      && (!v("bf-var") || i.varietyTags.includes(v("bf-var"))) && fl(i) && sc(i)
+      && (!v("bf-year") || (v("bf-year") === "none" ? !i.year : i.year === +v("bf-year")))
       && (!v("bf-level") || i.levels.includes(v("bf-level"))) && (!(max > 0) || i.price <= max)
       && (!$("bf-stock").checked || !i.soldOut) && (!$("bf-new").checked || i.isNew) && (!$("bf-practice").checked || i.practice)
       && (!q || [i.name, i.farm, i.region, i.variety, i.cup].join(" ").toLowerCase().includes(q)));
     const s = v("bf-sort");
     a.sort(s === "low" ? (x, y) => x.price - y.price : s === "high" ? (x, y) => y.price - x.price
-      : s === "new" ? (x, y) => (y.isNew - x.isNew) || ((y.value || 0) - (x.value || 0)) : (x, y) => ((y.value ?? -1) - (x.value ?? -1)) || (x.price - y.price));
+      : s === "new" ? (x, y) => (y.isNew - x.isNew) || ((y.value || 0) - (x.value || 0))
+      : s === "year" ? (x, y) => ((y.year || 0) - (x.year || 0)) || ((y.value || 0) - (x.value || 0))
+      : s === "score" ? (x, y) => ((y.scoreSum ?? -1) - (x.scoreSum ?? -1)) || (x.price - y.price)
+      : (x, y) => ((y.value ?? -1) - (x.value ?? -1)) || (x.price - y.price));
     return a;
   },
   buyRender(more){
@@ -970,14 +1011,14 @@ const app = {
     const val = i.value == null ? "" : i.value >= 110 ? `<span class="tag ok">가성비 ${i.value} · ${md}보다 ${Math.round((1 - 100 / i.value) * 100)}% 쌈</span>`
       : i.value <= 90 ? `<span class="tag">가성비 ${i.value} · ${md}보다 ${Math.round((100 / i.value - 1) * 100)}% 비쌈</span>` : `<span class="tag">가성비 ${i.value} · ${md} 수준</span>`;
     const facts = [i.country, i.region, i.farm].filter(Boolean).join(" / ");
-    const meta = [i.variety, i.process, i.grade, i.tier && i.tier !== i.grade ? i.tier : "", i.alt ? (i.alt[0] === i.alt[1] ? i.alt[0] : i.alt.join("~")) + "m" : "", i.harvest ? i.harvest + "년" : ""].filter(Boolean).join(" · ");
+    const meta = [i.variety, i.process, i.grade, i.tier && i.tier !== i.grade ? i.tier : "", i.alt ? (i.alt[0] === i.alt[1] ? i.alt[0] : i.alt.join("~")) + "m" : "", i.year ? `${i.year}년 ${i.yearKind}` : ""].filter(Boolean).join(" · ");
     return `<div class="card"${i.soldOut ? ' style="opacity:.55"' : ""}><div class="row" style="justify-content:space-between;align-items:start">
         <div style="flex:1;min-width:0"><span class="tag">${esc(src.name)}</span>${i.isNew ? ' <span class="tag ok">신규</span>' : ""}${i.sale ? ' <span class="tag warn">세일</span>' : ""}${i.soldOut ? ' <span class="tag bad">품절</span>' : ""}
           <div style="font-weight:600;margin-top:4px">${esc(i.name)}</div></div>
         <div style="text-align:right"><b style="font-size:18px">${won(i.price)}</b><div class="small">${i.unit === "1kg" ? "1kg" : esc(i.unit) + " 단위의 kg당"}</div></div></div>
       ${facts ? `<div class="small">${esc(facts)}</div>` : ""}${meta ? `<div class="small">${esc(meta)}</div>` : ""}
       ${i.cup ? `<div style="margin-top:4px">${esc(i.cup)}</div>` : ""}
-      <div class="row" style="margin-top:6px;gap:6px">${val}${i.practice ? '<span class="tag">연습용 가격대</span>' : ""}${i.levels.length ? `<span class="tag">추천 ${esc(this.sellerText(this.sellerRoastOf(i.roast)))}</span>` : ""}${i.scoreSum ? `<span class="tag">컵 점수 ${i.scoreSum}/25</span>` : ""}</div>
+      <div class="row" style="margin-top:6px;gap:6px">${val}${i.practice ? '<span class="tag">연습용 가격대</span>' : ""}${i.levels.length ? `<span class="tag">추천 ${esc(this.sellerText(this.sellerRoastOf(i.roast)))}</span>` : ""}${i.scoreSum ? `<span class="tag">컵 ${i.scoreSum}/25 · ${this.SCORE_KEYS.map(k => k.replace("바디감", "바디") + " " + (i.scores[k] ?? "-")).join(" ")}</span>` : ""}</div>
       <div class="row" style="margin-top:8px"><a class="sec" style="padding:8px 12px;border:1px solid var(--accent);border-radius:8px;color:var(--accent);text-decoration:none" href="${esc(i.url)}" target="_blank" rel="noopener">판매처에서 보기</a>
         ${i.soldOut ? "" : inCart ? `<button class="sec" onclick="app.cartAdd('${i.id}', 1)">＋1kg (지금 ${inCart.kg}kg)</button>` : `<button class="pri" onclick="app.cartAdd('${i.id}', 1)">구매 계획에 담기</button>`}</div></div>`;
   },
