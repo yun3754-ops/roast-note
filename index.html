@@ -56,6 +56,9 @@ ul{margin:6px 0;padding-left:20px}
 .run-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;color:var(--mute)}
 .run-timer{font-size:84px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;line-height:1}
 .run-target{text-align:center;font-size:18px;line-height:1.5}
+.run-heat{text-align:center;font-size:22px}
+.run-heat b{font-size:30px}
+.run-heat button{padding:6px 14px;font-size:16px;margin:0 6px;vertical-align:middle}
 .run-alert{padding:12px;border-radius:12px;background:var(--warn);color:var(--on);font-size:22px;font-weight:700;text-align:center}
 .run-big{flex:1;min-height:150px;border:0;border-radius:20px;background:var(--accent);color:var(--on);font-size:40px;font-weight:700;cursor:pointer;touch-action:manipulation}
 .run-big small{display:block;font-size:16px;font-weight:400;margin-top:6px}
@@ -199,6 +202,9 @@ ul{margin:6px 0;padding-left:20px}
       <button class="sec" onclick="app.dayAddRow()">＋ 생두 추가</button>
       <label style="margin:0 0 8px"><input type="checkbox" id="day-cold" style="width:auto" onchange="app.day.cold = this.checked; app.daySave(); app.dayRender()"> 겨울·바람 부는 날</label>
     </div>
+    <details class="small" style="margin-top:8px"><summary style="cursor:pointer">내 버너 눈금 (휴대용 가스버너 다이얼 위치 적어 두기)</summary>
+      <p>앱은 화력을 강·중강·중·중약·약 다섯 단계로 안내합니다. 각 단계가 내 버너의 어느 위치인지 적어 두면 가이드와 진행 화면에 함께 나옵니다. 예: 「끝까지」, 「눈금 3」, 「불꽃 2cm」.</p>
+      <div class="grid" id="heat-names"></div></details>
   </div>
   <div id="day-guide"></div>
 </section>
@@ -254,10 +260,13 @@ ul{margin:6px 0;padding-left:20px}
   <div class="card">
     <h2>추출 레시피</h2>
     <div class="grid">
+      <div style="grid-column:1/-1"><label>내 원두 (고르면 배전도·숙성 상태를 자동으로)</label><select id="b-batch" onchange="app.brewBatch()"></select></div>
       <div><label>방식</label><select id="b-type" onchange="app.brew()"><option value="drip">핸드드립</option><option value="esp">에스프레소</option></select></div>
       <div><label>배전도</label><select id="b-roast" onchange="app.brew()"></select></div>
-      <div><label>원두량 (g)</label><input id="b-dose" type="number" value="20" oninput="app.brew()"></div>
-      <div id="b-ratio-wrap"><label>비율 1:<span id="b-ratio-v">16</span></label><input id="b-ratio" type="range" min="15" max="17" step="0.5" value="16" oninput="app.brew()"></div>
+      <div><label>진하기</label><select id="b-str" onchange="app.brewStr()"><option value="strong">진하게</option><option value="normal" selected>보통</option><option value="light">연하게</option></select></div>
+      <div><label>원두량 (g)</label><input id="b-dose" type="number" inputmode="decimal" value="20" oninput="app.brew()"></div>
+      <div id="b-water-wrap"><label>또는 만들 양 (물 g)</label><input id="b-water" type="number" inputmode="decimal" placeholder="예: 320" oninput="app.brewWater()"></div>
+      <div id="b-ratio-wrap"><label>비율 1:<span id="b-ratio-v">16</span> (미세 조정)</label><input id="b-ratio" type="range" min="15" max="17" step="0.5" value="16" oninput="app.brewRatio()"></div>
     </div>
     <div id="brew-out" style="margin-top:10px"></div>
   </div>
@@ -291,6 +300,7 @@ ul{margin:6px 0;padding-left:20px}
   <div class="run-top"><span id="run-info"></span><button class="sec" onclick="app.runEnd()">그만하기</button></div>
   <div id="run-timer" class="run-timer">0:00</div>
   <div id="run-target" class="run-target"></div>
+  <div id="run-heat" class="run-heat"></div>
   <div id="run-alert" class="run-alert" hidden></div>
   <button id="run-big" class="run-big" onclick="app.runTap()"></button>
   <div class="run-sub"><button class="sec" onclick="app.runUndo()">↶ 방금 누른 것 취소</button><span id="run-charge"></span></div>
@@ -358,6 +368,9 @@ const DEFECTS = [
   ["티핑","원두 끝부분 과열","탄 맛, 끝이 검은 점","1차 크랙 전후 화력 과다 줄임"],
   ["불균일","크기 편차, 건조 부족, 과량 투입","복합 결점맛","핸드픽, 투입량 조절, 건조 연장"]
 ];
+// 휴대용 가스버너 화력 단계(상대값, 약→강). 지식 베이스: 초반 화력은 4장 프로파일, 옐로우 이후 단계적으로 낮춤(3.2),
+// 1차 크랙 30~60초 전 한 단계 더 낮춤(2.2·3.2). 디벨롭 화력은 지식 베이스에 따로 없어 직전 단계를 유지한다.
+const HEAT = ["약", "중약", "중", "중강", "강"];
 const DEGAS = {
   "drip-light":{label:"핸드드립(라이트)", min:5, max:10, note:"라이트일수록 길게. 게이샤·에티오피아는 1주 이후 향이 열리는 경우가 많습니다."},
   "drip-medium":{label:"핸드드립(미디엄)", min:3, max:7, note:""},
@@ -404,6 +417,7 @@ const app = {
     if(k === "log") this.renderLog();
     if(k === "beans") this.renderBeans();
     if(k === "day") this.dayRender();
+    if(k === "brew"){ this.brewBatchOpts(); this.brew(); }
   },
 
   /* ---------- 1. 프로파일 추천 ---------- */
@@ -820,6 +834,7 @@ const app = {
     try { this.day = JSON.parse(localStorage.getItem("roast-day") || "null"); } catch(e){ this.day = null; }
     if(!this.day) this.day = {rows: [], cold: false, w: 290};
     try { this.run = JSON.parse(localStorage.getItem("roast-run") || "null"); } catch(e){ this.run = null; }
+    try { this.heatNames = JSON.parse(localStorage.getItem("roast-heat-names") || "{}"); } catch(e){ this.heatNames = {}; }
   },
   daySave(){ try { localStorage.setItem("roast-day", JSON.stringify(this.day)); } catch(e){} },
   runSave(){ try { if(this.run) localStorage.setItem("roast-run", JSON.stringify(this.run)); else localStorage.removeItem("roast-run"); } catch(e){} },
@@ -837,6 +852,20 @@ const app = {
     this.daySave(); this.dayRender();
   },
   dayDel(i){ this.day.rows.splice(i, 1); this.daySave(); this.dayRender(); },
+  // 버너 화력: 생두별 계획(bean.heatPlan으로 단계마다 바꿀 수 있음)과 내 버너 눈금 이름
+  heatNames: {},
+  heatStep(lv, d){ const i = HEAT.indexOf(lv); return HEAT[Math.max(0, Math.min(HEAT.length - 1, (i < 0 ? 2 : i) + d))]; },
+  heatPlan(b){
+    const o = b.heatPlan || {}, dry = o.dry || this.profileOf(b).power, mai = o.mai || this.heatStep(dry, -1), pre = o.pre || this.heatStep(mai, -1);
+    return {dry, mai, pre, dev: o.dev || pre};
+  },
+  heatTxt(lv){ const n = this.heatNames[lv]; return n ? `${lv} (${n})` : lv; },
+  setHeat(id, key, val){
+    const b = this.beans[id]; if(!b) return;
+    const hp = {...(b.heatPlan || {})}; if(val) hp[key] = val; else delete hp[key];
+    b.heatPlan = hp; this.edits[id] = {...(this.edits[id] || {}), heatPlan: hp}; this.saveEdits(); this.saveBeans(); this.dayRender();
+  },
+  setHeatName(lv, val){ this.heatNames[lv] = val.trim(); try { localStorage.setItem("roast-heat-names", JSON.stringify(this.heatNames)); } catch(e){} this.dayRender(); },
   // 배치 순서. 고가 생두처럼 bean.batchPlan이 있으면 남은 계획 단계의 투입량·목표 감량을 쓴다(지식 베이스 4.1).
   dayQueue(){
     const q = [], seen = {};
@@ -871,6 +900,7 @@ const app = {
       <div><label>배치당 생두 (g)</label><input type="number" inputmode="numeric" value="${r.w}" onchange="app.daySet(${i}, 'w', this.value)"></div>
       ${this.day.rows.length > 1 ? `<div><button class="sec" onclick="app.dayDel(${i})">이 생두 빼기</button></div>` : ""}</div>`).join("")
       : '<p>사용 중인 생두가 없습니다. 「내 생두」에서 먼저 등록해 주세요.</p>';
+    $("heat-names").innerHTML = HEAT.slice().reverse().map(lv => `<div><label>${lv}</label><input value="${esc(this.heatNames[lv] || "")}" placeholder="내 버너 위치" onchange="app.setHeatName('${lv}', this.value)"></div>`).join("");
     $("day-result").innerHTML = this.dayResultHtml();
     $("day-guide").innerHTML = this.dayGuideHtml();
   },
@@ -886,13 +916,19 @@ const app = {
       items.forEach(x => { const o = outR(x); total += x.w; outLo += o[0]; outHi += o[1]; x.charge = this.chargeFor(base, x.no > 1).v; });
       const tips = this.tips({density: b.density, moist: b.moisture, crop: b.crop, expensive: b.expensive, process: b.process, kind: b.profileId === "yemen" ? "yemen" : "",
         alt: b.origin && (b.origin.altitudeRange ? b.origin.altitudeRange[0] : b.origin.altitude)});
+      const h = this.heatPlan(b), hs = k => `<b>${esc(this.heatTxt(h[k]))}</b>`;
       return `<div class="card"><div class="row" style="justify-content:space-between"><b>${esc(b.name)}</b><span class="tag">${esc(p.name)} · 초반 화력 ${p.power}</span></div>
         <div class="small">${items.length}배치 · 생두 ${g(need)} 사용 · 남은 생두 ${g(rem)} → ${g(Math.max(0, rem - need))}${need > rem ? ' <b class="bad">남은 양보다 많습니다</b>' : ""}</div>
-        <table style="margin-top:6px"><tr><td>옐로우</td><td><b>${rng(p.yellow)}</b></td></tr>
-        <tr><td>화력 한 단계 ↓</td><td><b>1차 크랙 30~60초 전</b> (목표 기준 ${mmss(p.c1[0] - 60)}~${mmss(p.c1[0] - 30)})</td></tr>
-        <tr><td>1차 크랙</td><td><b>${rng(p.c1)}</b></td></tr>
-        <tr><td>배출</td><td><b>1차 크랙 후 ${rng(p.dev)}</b> (DTR ${p.dtr[0]}~${p.dtr[1]}%, 목표 기준 ${mmss(p.c1[0] + p.dev[0])}~${mmss(p.c1[1] + p.dev[1])})</td></tr>
-        <tr><td>배출 무게</td><td><b>${g(outR(items[0])[0])}~${g(outR(items[0])[1])}</b> (투입 ${g(items[0].w)}, 감량 ${(items[0].loss || p.loss).join("~")}%)</td></tr></table>
+        <table style="margin-top:6px"><tr><th>단계</th><th>목표</th><th>버너 화력</th></tr>
+        <tr><td>건조<br><span class="small">투입~옐로우</span></td><td>옐로우 <b>${rng(p.yellow)}</b></td><td>${hs("dry")}${items.some(x => x.no > 1) ? '<br><span class="small">2번째 배치부터 약간 낮게</span>' : ""}</td></tr>
+        <tr><td>메일라드<br><span class="small">옐로우~</span></td><td>옐로우를 누르면</td><td>${hs("mai")}<br><span class="small">단계적으로 낮춤</span></td></tr>
+        <tr><td>1차 크랙 대비</td><td>1차 크랙 30~60초 전<br><span class="small">목표 기준 ${mmss(p.c1[0] - 60)}~${mmss(p.c1[0] - 30)}</span></td><td>${hs("pre")}</td></tr>
+        <tr><td>디벨롭</td><td>1차 크랙 <b>${rng(p.c1)}</b><br>→ 배출 <b>1차 크랙 후 ${rng(p.dev)}</b><br><span class="small">DTR ${p.dtr[0]}~${p.dtr[1]}%, 목표 기준 ${mmss(p.c1[0] + p.dev[0])}~${mmss(p.c1[1] + p.dev[1])}</span></td><td>${hs("dev")}</td></tr>
+        <tr><td>배출 무게</td><td colspan="2"><b>${g(outR(items[0])[0])}~${g(outR(items[0])[1])}</b> (투입 ${g(items[0].w)}, 감량 ${(items[0].loss || p.loss).join("~")}%)</td></tr></table>
+        <details class="small noprint" style="margin-top:4px"><summary style="cursor:pointer">이 생두 화력 계획 바꾸기</summary>
+          <div class="grid" style="margin-top:6px">${[["dry", "건조"], ["mai", "메일라드"], ["pre", "1차 크랙 대비"], ["dev", "디벨롭"]].map(([k, l]) => `<div><label>${l}</label><select onchange="app.setHeat('${esc(b.id)}', '${k}', this.value)">
+            <option value="">기본 (${esc(this.heatTxt(this.heatPlan({...b, heatPlan: {...(b.heatPlan || {}), [k]: ""}})[k]))})</option>${HEAT.slice().reverse().map(v => `<option value="${v}" ${(b.heatPlan || {})[k] === v ? "selected" : ""}>${esc(this.heatTxt(v))}</option>`).join("")}</select></div>`).join("")}</div>
+          <p>기본값은 지식 베이스의 초반 화력에서 옐로우 후 한 단계, 1차 크랙 30~60초 전 한 단계 낮춘 것입니다. 내 버너에서 맞는 단계를 찾으면 여기서 바꿔 두세요. 이 생두의 다음 가이드와 진행 화면에 그대로 쓰입니다.</p></details>
         <div class="small" style="margin-top:6px">배치별 투입 온도 (온도계 눈금)</div>
         <div class="day-batches">${items.map(x => `<span>#${x.no} <b>${x.charge}℃</b>${x.w !== r.w ? ` · ${x.w}g` : ""}${x.label ? ` · ${esc(x.label)}` : ""}</span>`).join("")}</div>
         <div class="small">${esc(this.chargeFor(base, items[0].no > 1).why)}. 진행 중에는 매 배치의 옐로우 시각으로 다음 투입 온도를 다시 제안합니다.</div>
@@ -901,7 +937,8 @@ const app = {
     return `<div class="card"><h2>한눈에 보기</h2>
       <div class="kv"><b>배치</b><span><b>${q.length}회</b> 연속</span><b>생두</b><span>${g(total)}</span><b>예상 원두</b><span>${g(outLo)}~${g(outHi)}</span></div>
       <ul class="small"><li>예열 15~20분, 매 배치 같은 투입 온도에 맞춘 뒤 투입</li><li>2번째 배치부터 드럼 축열 → 초반 화력 약간 낮게, 채프는 매 배치 제거</li>
-      <li>배출 후 4분 이내 냉각 (채반+선풍기)</li><li>투입 온도 시작값은 지식 베이스에 없는 추정치입니다. 옐로우 시각으로 보정합니다.</li></ul>
+      <li>배출 후 4분 이내 냉각 (채반+선풍기) · 진행 화면에 냉각 타이머가 나옵니다</li><li>투입 온도 시작값은 지식 베이스에 없는 추정치입니다. 옐로우 시각으로 보정합니다.</li>
+      <li>버너 화력은 상대 단계(강·중강·중·중약·약)입니다. 아래 「내 버너 눈금」에 실제 다이얼 위치를 적어 두면 함께 표시합니다.</li></ul>
       <button class="pri noprint" style="width:100%;font-size:18px;padding:14px" onclick="app.runStart()">▶ 연속 로스팅 시작</button>
       <p class="small">진행 화면에서는 큰 버튼 하나만 누릅니다: 투입 → 옐로우 → 1차 크랙 → 배출 (배치당 4번). 배출 무게는 끝나고 한꺼번에 입력합니다. 화면은 켜진 채로 유지되고, 화력을 낮출 때·배출 구간에서 소리와 진동으로 알립니다.</p></div>${blocks}`;
   },
@@ -960,10 +997,31 @@ const app = {
     const r = this.run; if(!r) return;
     this.audio();
     if(r.finished){ this.runClose(); return; }
-    if(!r.t0){ r.t0 = Date.now(); r.ev = {}; r.alerted = {}; this.runSave(); return this.runTick(); }
-    const k = !r.ev.yellow ? "yellow" : !r.ev.c1s ? "c1s" : "drop";
-    r.ev[k] = {t: Math.round((Date.now() - r.t0) / 1000), T: null};
+    if(!r.t0){
+      const plan = this.heatPlan(this.beans[r.q[r.i].beanId]);
+      r.t0 = Date.now(); r.ev = {}; r.alerted = {}; r.dropAt = null; r.heat = plan.dry; r.hlog = [{t: 0, lv: plan.dry, k: "start"}];
+      this.runSave(); return this.runTick();
+    }
+    const k = !r.ev.yellow ? "yellow" : !r.ev.c1s ? "c1s" : "drop", t = Math.round((Date.now() - r.t0) / 1000);
+    r.ev[k] = {t, T: null};
+    // 단계가 바뀌면 계획한 화력으로 안내를 넘긴다(사용자가 직접 바꾼 값과 구분해 기록)
+    const bean = this.beans[r.q[r.i].beanId], plan = this.heatPlan(bean);
+    if(k === "yellow") this.runHeatSet(plan.mai, t, "yellow");
+    // 디벨롭은 기본이 「유지」라서 생두에 디벨롭 화력을 따로 정해 둔 경우에만 바꾼다
+    if(k === "c1s" && (bean.heatPlan || {}).dev) this.runHeatSet(plan.dev, t, "c1s");
     if(k === "drop") this.runSaveBatch();
+    this.runSave(); this.runTick();
+  },
+  runHeatSet(lv, t, k){
+    const r = this.run; if(lv === r.heat) return;
+    r.heatMsg = {txt: `화력 ${this.heatTxt(r.heat)} → ${this.heatTxt(lv)}`, until: Date.now() + 15000};
+    r.heat = lv; r.hlog.push({t, lv, k});
+  },
+  // 진행 중 화력을 직접 바꾼 경우(▲▼): 기록만 남기고 안내는 그대로
+  runHeat(d){
+    const r = this.run; if(!r || !r.t0) return;
+    const lv = this.heatStep(r.heat, d); if(lv === r.heat) return;
+    r.heat = lv; r.hlog.push({t: Math.round((Date.now() - r.t0) / 1000), lv, k: "manual"}); r.heatMsg = null;
     this.runSave(); this.runTick();
   },
   // 배출하면 바로 배치 기록으로 저장(배출 무게는 나중에), 다음 배치 투입 온도를 이 배치의 옐로우로 다시 계산
@@ -971,20 +1029,23 @@ const app = {
     const r = this.run, it = r.q[r.i], b = this.beans[it.beanId], p = this.profileOf(b), ev = r.ev, total = ev.drop.t, dev = ev.c1s ? total - ev.c1s.t : null;
     this.lastId = Math.max(Date.now(), (this.lastId || 0) + 1, ...r.done.map(x => x + 1));
     const rec = {id: this.lastId, date: new Date().toISOString(), profile: p.name, profileId: p.id, beanId: b.id, charge: r.charge.v, cold: r.cold, second: r.i > 0,
-      bean: b.name, env: r.cold ? "겨울·바람" : "", note: `연속 로스팅 ${r.i + 1}/${r.q.length}`, weight: it.w, out: null, loss: null,
-      total, dev, dtr: dev != null ? dev / total * 100 : null, events: JSON.parse(JSON.stringify(ev)), points: [], tasting: ""};
+      bean: b.name, env: r.cold ? "겨울·바람" : "", weight: it.w, out: null, loss: null,
+      note: `연속 로스팅 ${r.i + 1}/${r.q.length} · 화력 ${(r.hlog || []).map(x => (x.t ? mmss(x.t) + " " : "") + x.lv + (x.k === "manual" ? "(직접)" : "")).join(" → ")}`,
+      heat: r.hlog || [], total, dev, dtr: dev != null ? dev / total * 100 : null, events: JSON.parse(JSON.stringify(ev)), points: [], tasting: ""};
     this.upsertBatch(rec);
-    r.done.push(rec.id); r.prev = {t0: r.t0, ev: JSON.parse(JSON.stringify(ev)), charge: r.charge, alerted: r.alerted, lastMsg: r.lastMsg};
+    r.done.push(rec.id); r.prev = {t0: r.t0, ev: JSON.parse(JSON.stringify(ev)), charge: r.charge, alerted: r.alerted, lastMsg: r.lastMsg, heat: r.heat, hlog: r.hlog};
     r.lastMsg = `#${r.i + 1} 완료 · ${mmss(total)}${dev != null ? ` · 디벨롭 ${mmss(dev)} (DTR ${(dev / total * 100).toFixed(1)}%)` : ""}`;
-    r.i++; r.t0 = null; r.ev = {}; r.alerted = {};
+    r.i++; r.t0 = null; r.ev = {}; r.alerted = {}; r.dropAt = Date.now(); r.heatMsg = null;
     if(r.i >= r.q.length) r.finished = true; else r.charge = this.runChargeFor(r.i, rec);
   },
   runUndo(){
     const r = this.run; if(!r) return;
-    if(r.t0){ const k = ["drop", "c1s", "yellow"].find(x => r.ev[x]); if(k) delete r.ev[k]; else r.t0 = null; }
+    const undoHeat = k => { r.hlog = (r.hlog || []).filter(x => x.k !== k); r.heat = r.hlog.length ? r.hlog[r.hlog.length - 1].lv : r.heat; r.heatMsg = null; };
+    if(r.t0){ const k = ["drop", "c1s", "yellow"].find(x => r.ev[x]); if(k){ delete r.ev[k]; undoHeat(k); if(k === "c1s") delete r.alerted.devmin; } else r.t0 = null; }
     else if(r.prev && r.done.length){
       const id = r.done.pop(); this.store(this.load().filter(b => b.id !== id));
-      r.i--; r.t0 = r.prev.t0; r.ev = r.prev.ev; delete r.ev.drop; r.charge = r.prev.charge; r.alerted = r.prev.alerted; r.lastMsg = r.prev.lastMsg; r.finished = false; r.prev = null;
+      r.i--; r.t0 = r.prev.t0; r.ev = r.prev.ev; delete r.ev.drop; r.charge = r.prev.charge; r.alerted = r.prev.alerted; r.lastMsg = r.prev.lastMsg;
+      r.heat = r.prev.heat; r.hlog = r.prev.hlog; r.dropAt = null; r.finished = false; r.prev = null;
     } else return this.notify("되돌릴 것이 없습니다.");
     this.runSave(); this.runTick(); this.notify("방금 누른 것을 취소했습니다.");
   },
@@ -996,30 +1057,38 @@ const app = {
     }
     this.runClose(); this.tab("day");
   },
+  // 0.25초마다 돌지만 내용이 바뀐 곳만 다시 그린다(누르는 도중에 버튼이 바뀌면 탭이 씹힐 수 있음)
   runTick(){
     const r = this.run; if(!r) return;
-    const big = $("run-big"), al = $("run-alert"), rng = a => `${mmss(a[0])}~${mmss(a[1])}`;
+    const put = (id, html) => { const el = $(id); if(el._h !== html){ el.innerHTML = html; el._h = html; } };
+    const rng = a => `${mmss(a[0])}~${mmss(a[1])}`, now = Date.now();
+    let alert = "";
     if(r.finished){
-      $("run-info").textContent = `연속 로스팅 ${r.done.length}배치 완료`; $("run-timer").textContent = "끝";
-      $("run-target").textContent = r.lastMsg; $("run-charge").textContent = ""; al.hidden = true;
-      big.innerHTML = "결과 입력<small>배출 무게를 한꺼번에 입력합니다</small>"; return;
+      put("run-info", `연속 로스팅 ${r.done.length}배치 완료`); put("run-timer", "끝"); put("run-target", esc(r.lastMsg)); put("run-heat", this.runCoolHtml()); put("run-charge", "");
+      put("run-alert", ""); $("run-alert").hidden = true; put("run-big", "결과 입력<small>배출 무게를 한꺼번에 입력합니다</small>"); return;
     }
-    const it = r.q[r.i], b = this.beans[it.beanId], p = this.profileOf(b);
-    $("run-info").textContent = `배치 ${r.i + 1}/${r.q.length} · ${b.name} · ${it.w}g`;
+    const it = r.q[r.i], b = this.beans[it.beanId], p = this.profileOf(b), plan = this.heatPlan(b);
+    put("run-info", `배치 ${r.i + 1}/${r.q.length} · ${esc(b.name)} · ${it.w}g`);
     if(!r.t0){
-      $("run-timer").textContent = "0:00"; al.hidden = true;
-      $("run-target").innerHTML = (r.lastMsg ? esc(r.lastMsg) + "<br>" : "") + `투입 온도 <b>${r.charge.v}℃</b><br><span class="small">${esc(r.charge.why)}</span>`;
-      $("run-charge").innerHTML = `<button class="sec" onclick="app.runAdj(-5)">−5℃</button> <button class="sec" onclick="app.runAdj(5)">+5℃</button>`;
-      big.innerHTML = `투입<small>${r.charge.v}℃에서 생두를 넣고 바로 누르기</small>`; return;
+      put("run-timer", "0:00");
+      put("run-target", (r.lastMsg ? esc(r.lastMsg) + "<br>" : "") + `투입 온도 <b>${r.charge.v}℃</b><br><span class="small">${esc(r.charge.why)}</span>`);
+      put("run-heat", this.runCoolHtml() + `<div>시작 화력 <b>${esc(this.heatTxt(plan.dry))}</b>${r.i > 0 ? '<br><span class="small">연속 배치: 첫 배치보다 약간 낮게 · 채프 제거</span>' : ""}</div>`);
+      put("run-charge", `<button class="sec" onclick="app.runAdj(-5)">−5℃</button> <button class="sec" onclick="app.runAdj(5)">+5℃</button>`);
+      put("run-alert", ""); $("run-alert").hidden = true;
+      put("run-big", `투입<small>${r.charge.v}℃에서 생두를 넣고 바로 누르기</small>`); return;
     }
-    const t = (Date.now() - r.t0) / 1000, ev = r.ev; let target, alert = "", label, hint;
-    $("run-timer").textContent = mmss(t); $("run-charge").textContent = `투입 ${r.charge.v}℃`;
+    const t = (now - r.t0) / 1000, ev = r.ev; let target, label, hint;
+    put("run-timer", mmss(t)); put("run-charge", `투입 ${r.charge.v}℃`);
     if(!ev.yellow){
       label = "옐로우"; hint = "색이 연노랑, 풋내 → 빵 냄새"; target = `옐로우 목표 <b>${rng(p.yellow)}</b>`;
       if(t > p.yellow[1] + 30) alert = "옐로우가 늦습니다 · 초반 열량 확인";
     } else if(!ev.c1s){
       label = "1차 크랙"; hint = "\"탁\" 소리가 나면 누르기"; target = `1차 크랙 목표 <b>${rng(p.c1)}</b><br><span class="small">옐로우 ${mmss(ev.yellow.t)}</span>`;
-      if(t >= p.c1[0] - 60){ alert = "화력 한 단계 낮추기 (1차 크랙 30~60초 전)"; this.runAlertOnce("heat", 2); }
+      if(t >= p.c1[0] - 60){
+        // 옐로우 뒤에 직접 화력을 바꿨으면 그 값을 존중하고 안내만 한다
+        if(!r.alerted.heat && !(r.hlog || []).some(x => x.k === "manual" && x.t >= ev.yellow.t)) this.runHeatSet(plan.pre, Math.round(t), "pre");
+        alert = `화력 한 단계 ↓ ${esc(this.heatTxt(plan.pre))} (1차 크랙 30~60초 전)`; this.runAlertOnce("heat", 2);
+      }
     } else {
       const dev = t - ev.c1s.t; label = "배출"; hint = "배출하고 바로 누르기 · 4분 안에 냉각";
       target = `디벨롭 <b>${mmss(dev)}</b> / 목표 ${rng(p.dev)}<br><span class="small">옐로우 ${mmss(ev.yellow.t)} · 1차 크랙 ${mmss(ev.c1s.t)}</span>`;
@@ -1027,8 +1096,18 @@ const app = {
       else if(dev >= p.dev[0]){ alert = "배출 구간 · 색과 향을 보고 배출"; this.runAlertOnce("devmin", 1); }
     }
     if(t > 900) alert = "총 15분 초과 · 향이 납작해질 수 있습니다";
-    $("run-target").innerHTML = target; al.textContent = alert; al.hidden = !alert;
-    big.innerHTML = `${label}<small>${hint}</small>`;
+    if(!alert && r.heatMsg && now < r.heatMsg.until) alert = esc(r.heatMsg.txt);
+    put("run-target", target);
+    put("run-heat", `<button class="sec" onclick="app.runHeat(-1)">▼</button>화력 <b>${esc(this.heatTxt(r.heat))}</b><button class="sec" onclick="app.runHeat(1)">▲</button>`);
+    put("run-alert", alert); $("run-alert").hidden = !alert;
+    put("run-big", `${label}<small>${hint}</small>`);
+  },
+  // 배출 후 냉각 타이머(지식 베이스 3.2: 4분 이내 실온)
+  runCoolHtml(){
+    const r = this.run; if(!r || !r.dropAt) return "";
+    const s = (Date.now() - r.dropAt) / 1000;
+    if(s >= 240){ this.runAlertOnce("cool", 1); return `<div class="small">냉각 4분 지남 · 원두가 실온인지 확인</div>`; }
+    return `<div>냉각 <b>${mmss(s)}</b> / 4:00</div>`;
   },
 
   /* ---------- 사진·캡처 인식 (tesseract.js, 폰 안에서만 처리) ---------- */
@@ -1294,6 +1373,7 @@ const app = {
       <h2>생두 요약</h2><div class="kv">${rows.map(([k, v]) => `<b>${k}</b><span>${k === "구입" ? v : esc(v)}</span>`).join("")}</div>
       <h2 style="margin-top:14px">로스팅 가이드 — ${esc(p.name)} <span class="tag">초반 화력 ${p.power}</span></h2>
       <table><tr><td>옐로우</td><td>${rng(p.yellow)}</td></tr><tr><td>1차 크랙</td><td>${rng(p.c1)}</td></tr>
+      <tr><td>버너 화력</td><td>${(h => [`건조 ${h.dry}`, `옐로우 후 ${h.mai}`, `1차 크랙 30~60초 전 ${h.pre}`, `디벨롭 ${h.dev}`].map(esc).join(" → "))(this.heatPlan(bean))}</td></tr>
       <tr><td>디벨롭</td><td>${rng(p.dev)} (DTR 약 ${p.dtr[0]}~${p.dtr[1]}%)</td></tr>
       <tr><td>목표 배전도</td><td>${lv.name} — 감량 ${lv.lo}~${lv.hi > 25 ? "" : lv.hi}%${lv.hi > 25 ? " 이상" : ""} · ${esc(lv.use)}</td></tr>
       <tr><td>프로파일 감량</td><td>${p.loss[0]}~${p.loss[1]}%</td></tr>
@@ -1584,27 +1664,53 @@ const app = {
   },
 
   /* ---------- 5. 추출·숙성 ---------- */
+  // 진하기 (지식 베이스 6.2 비율 1:15~1:17, 6.4 「농도 부족 → 1:15 쪽, 농도 과다 → 비율 늘림」)
+  // 에스프레소는 6.3: 1:2, 라이트만 1:2.2~1:2.5라서 라이트일 때만 진하기를 나눈다.
+  STRENGTH: {strong: {name: "진하게", drip: 15, esp: 2.2}, normal: {name: "보통", drip: 16, esp: 2.35}, light: {name: "연하게", drip: 17, esp: 2.5}},
+  brewStr(){ $("b-ratio").value = this.STRENGTH[$("b-str").value].drip; this.brewWater(true); this.brew(); },
+  brewRatio(){ const r = parseFloat($("b-ratio").value), k = Object.keys(this.STRENGTH).find(x => this.STRENGTH[x].drip === r); if(k) $("b-str").value = k; this.brewWater(true); this.brew(); },
+  // 만들 양(물)을 넣으면 비율로 원두량을 거꾸로 계산
+  brewWater(keep){
+    const w = parseFloat($("b-water").value); if(!(w > 0)) return keep ? null : this.brew();
+    $("b-dose").value = (w / parseFloat($("b-ratio").value)).toFixed(1); if(!keep) this.brew();
+  },
+  brewBatchOpts(){
+    const sel = $("b-batch"), cur = sel.value, list = this.logList().filter(b => b.loss != null).slice(0, 20);
+    sel.innerHTML = '<option value="">(직접 선택)</option>' + list.map(b => `<option value="${b.id}">${esc(this.dayOf(b.date).slice(5))} ${esc(b.bean || b.profile)} · ${b.loss.toFixed(1)}% ${levelOf(b.loss).name}</option>`).join("");
+    if([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  },
+  brewBatch(){ const b = this.findBatch(+$("b-batch").value); if(b) $("b-roast").value = levelOf(b.loss).key; this.brew(); },
+  // 고른 원두의 숙성 상태 (지식 베이스 5.1)
+  restHtml(){
+    const b = this.findBatch(+$("b-batch").value); if(!b) return "";
+    const lv = levelOf(b.loss), light = lv.key === "light" || lv.key === "medlight";
+    const d = DEGAS[$("b-type").value === "esp" ? "espresso" : light ? "drip-light" : "drip-medium"], days = Math.floor((Date.now() - new Date(b.date)) / 86400000);
+    const st = days < d.min ? `<span class="warn">아직 이릅니다 (${d.min - days}일 더)</span>` : days <= d.max ? `<span class="ok">마시기 좋은 때</span>` : `<span class="small">권장 기간(${d.max}일)이 지났습니다 · 개봉 후 2~4주 안에 소진</span>`;
+    return `<div class="alert" style="background:transparent">로스팅 ${days}일째 · ${esc(d.label)} 권장 ${d.min}~${d.max}일 · ${st}</div>`;
+  },
   brew(){
-    const type = $("b-type").value, lv = LEVELS.find(l => l.key === $("b-roast").value), dose = parseFloat($("b-dose").value) || 0;
-    $("b-ratio-wrap").style.display = type === "drip" ? "" : "none";
+    const type = $("b-type").value, lv = LEVELS.find(l => l.key === $("b-roast").value), dose = parseFloat($("b-dose").value) || 0, S = this.STRENGTH[$("b-str").value];
+    $("b-ratio-wrap").style.display = $("b-water-wrap").style.display = type === "drip" ? "" : "none";
     const light = lv.key === "light" || lv.key === "medlight";
     let html;
     if(type === "drip"){
       const r = parseFloat($("b-ratio").value); $("b-ratio-v").textContent = r;
-      html = `<table><tr><td>물 양</td><td><b>${(dose*r).toFixed(0)} g</b> (1:${r})</td></tr>
+      html = `<table><tr><td>물 양</td><td><b>${(dose*r).toFixed(0)} g</b> (원두 ${dose}g, 1:${r}${r === S.drip ? " · " + S.name : ""})</td></tr>
         <tr><td>물 온도</td><td>${lv.temp}</td></tr>
         <tr><td>분쇄도</td><td>중간~중간 가늘게 (굵은 설탕 정도)</td></tr>
         <tr><td>뜸</td><td>${(dose*2).toFixed(0)}~${(dose*3).toFixed(0)} g, 30~45초</td></tr>
         <tr><td>총 시간</td><td>2:30~3:30 (V60 기준)</td></tr>
         <tr><td>목표</td><td>EY 18~22%, TDS 1.15~1.45%</td></tr></table>`;
+      html += `<p class="small">진하기: 진하게 1:15 · 보통 1:16 · 연하게 1:17 (지식 베이스 범위 1:15~1:17). 마셔 보고 밍밍하면 진하게, 무겁고 탁하면 연하게 쪽으로 옮기세요.</p>`;
     } else {
-      const lo = light ? 2.2 : 2, hi = light ? 2.5 : 2;
-      html = `<table><tr><td>추출량</td><td><b>${(dose*lo).toFixed(0)}${hi!==lo ? "~"+(dose*hi).toFixed(0) : ""} g</b> (1:${lo}${hi!==lo ? "~1:"+hi : ""})</td></tr>
+      const k = light ? S.esp : 2;
+      html = `<table><tr><td>추출량</td><td><b>${(dose*k).toFixed(0)} g</b> (1:${k}${light ? " · " + S.name : ""})</td></tr>
         <tr><td>시간</td><td>25~32초</td></tr>
         <tr><td>물 온도</td><td>${light ? "94~95℃ (라이트는 높게)" : "92~95℃"}</td></tr>
         <tr><td>목표</td><td>EY 18~22%, TDS 8~12%</td></tr></table>`;
+      html += `<p class="small">${light ? "라이트 진하기: 진하게 1:2.2 · 보통 1:2.35 · 연하게 1:2.5 (지식 베이스 1:2.2~1:2.5)." : "미디엄 이상은 지식 베이스 기준이 1:2 하나라서 진하기 선택은 적용하지 않습니다."}</p>`;
     }
-    $("brew-out").innerHTML = html + `<p class="small">물: 총경도 약 50~175ppm, 무취·무염소. 초순수·증류수는 밍밍해집니다.</p>`;
+    $("brew-out").innerHTML = this.restHtml() + html + `<p class="small">물: 총경도 약 50~175ppm, 무취·무염소. 초순수·증류수는 밍밍해집니다.</p>`;
   },
   ey(){
     const tds = parseFloat($("e-tds").value), out = parseFloat($("e-out").value), dose = parseFloat($("e-dose").value);
