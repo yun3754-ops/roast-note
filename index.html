@@ -174,7 +174,7 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>수분 (%)</label><input id="nb-moist" type="number" step="0.1"></div>
       <div><label>구입량 (kg) *</label><input id="nb-kg" type="number" step="0.1" value="1"></div>
       <div><label>kg당 가격 (원)</label><input id="nb-price" type="number"></div>
-      <div><label>구입처</label><input id="nb-supplier" list="supplier-list"><datalist id="supplier-list"><option value="세웅지씨"><option value="커피리브레"></datalist></div>
+      <div><label>구입처</label><input id="nb-supplier" list="supplier-list"><datalist id="supplier-list"><option value="세웅지씨"><option value="커피리브레"><option value="GSC"></datalist></div>
       <div><label>구입일</label><input id="nb-date" type="date"></div>
       <div><label>판매처 추천 로스팅 (밝은 쪽)</label><select id="nb-sr-from" class="sr-sel" onchange="app.nbLevelHint()"></select></div>
       <div><label>판매처 추천 로스팅 (어두운 쪽)</label><select id="nb-sr-to" class="sr-sel" onchange="app.nbLevelHint()"></select></div>
@@ -209,6 +209,34 @@ ul{margin:6px 0;padding-left:20px}
       <div class="grid" id="heat-names"></div></details>
   </div>
   <div id="day-guide"></div>
+</section>
+
+<!-- 생두 구매: 세웅지씨·커피리브레·GSC 통합 목록(1kg 가격), 생두찾기 필터, 가성비, 구매 계획 -->
+<section id="t-buy">
+  <div class="card" id="buy-head"><h2>생두 구매</h2><p class="small">불러오는 중…</p></div>
+  <div class="card" id="buy-cart-card" hidden></div>
+  <div class="card">
+    <h2>생두찾기</h2>
+    <div class="grid">
+      <div style="grid-column:1/-1"><label>검색 (이름·농장·컵 노트)</label><input id="bf-q" placeholder="예: 게이샤, 예가체프, 복숭아" oninput="app.buyRender()"></div>
+      <div><label>판매처</label><select id="bf-site" onchange="app.buyRender()"><option value="">전체</option><option value="sw">세웅지씨</option><option value="lb">커피리브레</option><option value="gsc">GSC</option></select></div>
+      <div><label>국가</label><select id="bf-country" onchange="app.buyRender()"></select></div>
+      <div><label>가공</label><select id="bf-proc" onchange="app.buyRender()"><option value="">전체</option><option>워시드</option><option>내추럴</option><option>허니</option><option>무산소</option><option>디카페인</option><option>기타</option></select></div>
+      <div><label>등급</label><select id="bf-tier" onchange="app.buyRender()"><option value="">전체</option><option>커머셜</option><option>하이커머셜</option><option>스페셜티</option><option>마이크로랏</option></select></div>
+      <div><label>품종·트렌드</label><select id="bf-var" onchange="app.buyRender()"></select></div>
+      <div><label>향미</label><select id="bf-flavor" onchange="app.buyRender()"></select></div>
+      <div><label>추천 배전도</label><select id="bf-level" onchange="app.buyRender()"></select></div>
+      <div><label>1kg 최대 가격 (원)</label><input id="bf-max" type="number" inputmode="numeric" placeholder="예: 30000" oninput="app.buyRender()"></div>
+      <div><label>정렬</label><select id="bf-sort" onchange="app.buyRender()"><option value="value">가성비 높은 순</option><option value="low">가격 낮은 순</option><option value="high">가격 높은 순</option><option value="new">신규 입고 먼저</option></select></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label style="margin:0"><input type="checkbox" id="bf-stock" checked style="width:auto" onchange="app.buyRender()"> 품절 빼기</label>
+      <label style="margin:0"><input type="checkbox" id="bf-new" style="width:auto" onchange="app.buyRender()"> 신규 입고만</label>
+      <label style="margin:0"><input type="checkbox" id="bf-practice" style="width:auto" onchange="app.buyRender()"> 연습용 가격대</label>
+      <button class="sec" onclick="app.buyReset()">조건 초기화</button>
+    </div>
+  </div>
+  <div id="buy-list"></div>
 </section>
 
 <!-- 3. 배치 기록 -->
@@ -397,7 +425,7 @@ const app = {
   ],
 
   init(){
-    const tabs = [["beans","내 생두"],["day","오늘 로스팅"],["log","배치 기록"],["brew","추출·숙성"],["diag","진단"],["plan","프로파일 추천"],["roast","상세 세션"]];
+    const tabs = [["beans","내 생두"],["day","오늘 로스팅"],["buy","생두 구매"],["log","배치 기록"],["brew","추출·숙성"],["diag","진단"],["plan","프로파일 추천"],["roast","상세 세션"]];
     $("tabs").innerHTML = tabs.map(([k,l]) => `<button data-t="${k}" onclick="app.tab('${k}')">${l}</button>`).join("");
     $("r-profile").innerHTML = PROFILES.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
     $("r-events").innerHTML = this.EVENTS.map(e => `<button class="${e.drop?"pri":"sec"}" id="ev-${e.k}" onclick="app.mark('${e.k}')" disabled>${e.label}</button>`).join("");
@@ -425,6 +453,7 @@ const app = {
     if(k === "log") this.renderLog();
     if(k === "beans") this.renderBeans();
     if(k === "day") this.dayRender();
+    if(k === "buy") this.buyOpen();
     if(k === "brew"){ this.brewBatchOpts(); this.brew(); }
   },
 
@@ -871,6 +900,132 @@ const app = {
       ((b.adjustments || []).length ? "<ul>" + b.adjustments.map(a => `<li>${esc(a)}</li>`).join("") + "</ul>" : "");
     this.showSuggest();
   },
+  /* ---------- 생두 구매: 세 판매처 통합 목록(data/market.json, 1kg 가격) ---------- */
+  market: null, cart: [], buyShown: 40,
+  async buyOpen(){
+    try { this.cart = JSON.parse(localStorage.getItem("roast-cart") || "[]"); } catch(e){ this.cart = []; }
+    if(!this.market){
+      // 설치 앱은 같은 폴더, 링크 페이지(아티팩트)는 함께 게시한 파일, 둘 다 안 되면 공개 사본에서 읽는다
+      for(const u of ["data/market.json", "https://yun3754-ops.github.io/roast-note/data/market.json"]){
+        try { const r = await fetch(u, {cache: "no-store"}); if(r.ok){ this.market = await r.json(); break; } } catch(e){}
+      }
+      if(!this.market){ $("buy-head").innerHTML = '<h2>생두 구매</h2><p>생두 목록을 불러오지 못했습니다. 인터넷 연결을 확인하거나, Claude에게 「생두 시세 갱신해 줘」라고 요청하세요.</p>'; return; }
+      this.buyPrepare(); this.buyFilters();
+    }
+    this.buyRender();
+  },
+  // 가성비 지수 = 같은 조건(국가·가공·게이샤 여부, 둘 다 알면 등급도 같음) 1kg 가격 중앙값 ÷ 이 생두 1kg 가격 × 100. 3개 이상일 때만.
+  // 게이샤는 같은 나라·가공에서도 가격대가 따로 놀아서(파나마 워시드 1.7만 원 vs 게이샤 16만 원) 따로 묶는다.
+  buyPrepare(){
+    const items = this.market.items;
+    const med = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+    const gesha = i => i.varietyTags.includes("게이샤") || /게이샤|게샤|geisha|gesha/i.test(i.name + " " + i.variety);
+    items.forEach(it => { it.gesha = gesha(it); });
+    items.forEach(it => {
+      it.levels = this.sellerLevels(this.sellerRoastOf(it.roast));
+      const g = items.filter(o => o.country && o.country === it.country && o.processKey === it.processKey && o.gesha === it.gesha && (!it.tier || !o.tier || o.tier === it.tier));
+      it.group = g.length; it.median = g.length >= 3 ? med(g.map(o => o.price)) : null;
+      it.value = it.median ? Math.round(it.median / it.price * 100) : null;
+      it.practice = it.processKey === "워시드" && it.price >= 18000 && it.price <= 25000;
+      it.scoreSum = it.scores ? Object.values(it.scores).reduce((a, b) => a + b, 0) : null;
+    });
+  },
+  buyFilters(){
+    const m = this.market, opt = (list, all) => `<option value="">${all}</option>` + list.map(x => `<option>${esc(x)}</option>`).join("");
+    const countries = [...new Set(m.items.map(i => i.country).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+    $("bf-country").innerHTML = opt(countries, "전체");
+    $("bf-var").innerHTML = opt(m.varieties.map(v => v.key), "전체");
+    $("bf-flavor").innerHTML = opt(m.flavors.map(f => f.key).filter(k => m.items.some(i => i.flavors.includes(k))), "전체");
+    $("bf-level").innerHTML = '<option value="">전체</option>' + LEVELS.map(l => `<option value="${l.key}">${l.name}</option>`).join("");
+  },
+  buyReset(){ ["bf-q", "bf-site", "bf-country", "bf-proc", "bf-tier", "bf-var", "bf-flavor", "bf-level", "bf-max"].forEach(id => { $(id).value = ""; }); $("bf-new").checked = $("bf-practice").checked = false; $("bf-stock").checked = true; this.buyRender(); },
+  buyList(){
+    const v = id => $(id).value, q = v("bf-q").trim().toLowerCase(), max = parseFloat(v("bf-max"));
+    let a = this.market.items.filter(i => (!v("bf-site") || i.site === v("bf-site")) && (!v("bf-country") || i.country === v("bf-country"))
+      && (!v("bf-proc") || i.processKey === v("bf-proc")) && (!v("bf-tier") || i.tier === v("bf-tier"))
+      && (!v("bf-var") || i.varietyTags.includes(v("bf-var"))) && (!v("bf-flavor") || i.flavors.includes(v("bf-flavor")))
+      && (!v("bf-level") || i.levels.includes(v("bf-level"))) && (!(max > 0) || i.price <= max)
+      && (!$("bf-stock").checked || !i.soldOut) && (!$("bf-new").checked || i.isNew) && (!$("bf-practice").checked || i.practice)
+      && (!q || [i.name, i.farm, i.region, i.variety, i.cup].join(" ").toLowerCase().includes(q)));
+    const s = v("bf-sort");
+    a.sort(s === "low" ? (x, y) => x.price - y.price : s === "high" ? (x, y) => y.price - x.price
+      : s === "new" ? (x, y) => (y.isNew - x.isNew) || ((y.value || 0) - (x.value || 0)) : (x, y) => ((y.value ?? -1) - (x.value ?? -1)) || (x.price - y.price));
+    return a;
+  },
+  buyRender(more){
+    if(!this.market) return;
+    const m = this.market, src = m.sources, won = n => Math.round(n).toLocaleString("ko-KR") + "원";
+    const counts = Object.keys(src).map(k => `${src[k].name} ${m.items.filter(i => i.site === k).length}`).join(" · ");
+    $("buy-head").innerHTML = `<h2>생두 구매</h2><div class="small">기준 ${esc(m.updated)} · ${counts}개 · <b>가격은 모두 1kg 기준</b> (커피리브레는 1kg 소분가)</div>
+      <p class="small">세일·품절은 수시로 바뀌니 결제 전에 판매처에서 확인하세요. 결제는 각 사이트에서 합니다. 목록이 오래됐으면 Claude에게 「생두 시세 갱신해 줘」라고 하면 다시 모읍니다.</p>
+      <details class="small"><summary style="cursor:pointer">가성비 지수란?</summary><p>같은 국가·같은 가공·게이샤 여부(둘 다 등급이 있으면 같은 등급)인 생두들의 1kg 가격 중앙값 ÷ 이 생두의 1kg 가격 × 100입니다. 100보다 크면 같은 조건 가운데 싼 편입니다. 비교 대상이 3개 미만이면 표시하지 않습니다. 이 앱이 정한 계산식이고 맛 품질을 뜻하지 않습니다. 「연습용 가격대」는 지식 베이스 8장의 「kg당 1.8~2.5만 원대 워시드」입니다.</p></details>`;
+    const list = this.buyList(); if(!more) this.buyShown = 40;
+    $("buy-list").innerHTML = `<div class="small" style="margin:0 2px 6px">${list.length}개</div>` + list.slice(0, this.buyShown).map(i => this.buyCard(i)).join("")
+      + (list.length > this.buyShown ? `<button class="sec" style="width:100%" onclick="app.buyShown += 40; app.buyRender(true)">더 보기 (${list.length - this.buyShown}개 남음)</button>` : "");
+    this.cartRender();
+  },
+  buyCard(i){
+    const src = this.market.sources[i.site], won = n => Math.round(n).toLocaleString("ko-KR") + "원", inCart = this.cart.find(c => c.id === i.id);
+    const md = i.median ? `같은 조건 ${i.group}개 중앙값 ${won(i.median)}` : "";
+    const val = i.value == null ? "" : i.value >= 110 ? `<span class="tag ok">가성비 ${i.value} · ${md}보다 ${Math.round((1 - 100 / i.value) * 100)}% 쌈</span>`
+      : i.value <= 90 ? `<span class="tag">가성비 ${i.value} · ${md}보다 ${Math.round((100 / i.value - 1) * 100)}% 비쌈</span>` : `<span class="tag">가성비 ${i.value} · ${md} 수준</span>`;
+    const facts = [i.country, i.region, i.farm].filter(Boolean).join(" / ");
+    const meta = [i.variety, i.process, i.grade, i.tier && i.tier !== i.grade ? i.tier : "", i.alt ? (i.alt[0] === i.alt[1] ? i.alt[0] : i.alt.join("~")) + "m" : "", i.harvest ? i.harvest + "년" : ""].filter(Boolean).join(" · ");
+    return `<div class="card"${i.soldOut ? ' style="opacity:.55"' : ""}><div class="row" style="justify-content:space-between;align-items:start">
+        <div style="flex:1;min-width:0"><span class="tag">${esc(src.name)}</span>${i.isNew ? ' <span class="tag ok">신규</span>' : ""}${i.sale ? ' <span class="tag warn">세일</span>' : ""}${i.soldOut ? ' <span class="tag bad">품절</span>' : ""}
+          <div style="font-weight:600;margin-top:4px">${esc(i.name)}</div></div>
+        <div style="text-align:right"><b style="font-size:18px">${won(i.price)}</b><div class="small">${i.unit === "1kg" ? "1kg" : esc(i.unit) + " 단위의 kg당"}</div></div></div>
+      ${facts ? `<div class="small">${esc(facts)}</div>` : ""}${meta ? `<div class="small">${esc(meta)}</div>` : ""}
+      ${i.cup ? `<div style="margin-top:4px">${esc(i.cup)}</div>` : ""}
+      <div class="row" style="margin-top:6px;gap:6px">${val}${i.practice ? '<span class="tag">연습용 가격대</span>' : ""}${i.levels.length ? `<span class="tag">추천 ${esc(this.sellerText(this.sellerRoastOf(i.roast)))}</span>` : ""}${i.scoreSum ? `<span class="tag">컵 점수 ${i.scoreSum}/25</span>` : ""}</div>
+      <div class="row" style="margin-top:8px"><a class="sec" style="padding:8px 12px;border:1px solid var(--accent);border-radius:8px;color:var(--accent);text-decoration:none" href="${esc(i.url)}" target="_blank" rel="noopener">판매처에서 보기</a>
+        ${i.soldOut ? "" : inCart ? `<button class="sec" onclick="app.cartAdd('${i.id}', 1)">＋1kg (지금 ${inCart.kg}kg)</button>` : `<button class="pri" onclick="app.cartAdd('${i.id}', 1)">구매 계획에 담기</button>`}</div></div>`;
+  },
+  cartSave(){ try { localStorage.setItem("roast-cart", JSON.stringify(this.cart)); } catch(e){} },
+  cartAdd(id, d){
+    const c = this.cart.find(x => x.id === id);
+    if(c){ c.kg = Math.max(0, c.kg + d); if(!c.kg) this.cart = this.cart.filter(x => x !== c); } else if(d > 0) this.cart.push({id, kg: d});
+    this.cartSave(); this.buyRender(true);
+  },
+  // 판매처별 합계와 무료배송까지 남은 금액(1kg씩 사면 배송비가 kg당 가격을 크게 올린다)
+  cartRender(){
+    const box = $("buy-cart-card"), m = this.market, won = n => Math.round(n).toLocaleString("ko-KR") + "원";
+    const rows = this.cart.map(c => ({...c, it: m.items.find(i => i.id === c.id)})).filter(c => c.it);
+    if(!rows.length){ box.hidden = true; return; }
+    const remain = this.activeBeans().reduce((s, b) => s + this.remainingG(b), 0), per = (this.day.w || 290) * 8;
+    const kgAll = rows.reduce((s, c) => s + c.kg, 0);
+    const sites = Object.keys(m.sources).filter(k => rows.some(c => c.it.site === k)).map(k => {
+      const src = m.sources[k], rs = rows.filter(c => c.it.site === k), sub = rs.reduce((s, c) => s + c.kg * c.it.price, 0), ship = sub >= src.ship.free ? 0 : src.ship.fee;
+      return `<div style="margin-top:10px"><b>${esc(src.name)}</b> <span class="small">${won(sub)} + 배송 ${ship ? won(ship) : "무료"} = <b>${won(sub + ship)}</b>${ship ? ` · 무료배송까지 ${won(src.ship.free - sub)}` : ""} · 배송비 포함 kg당 ${won((sub + ship) / rs.reduce((s, c) => s + c.kg, 0))}</span>
+        <table>${rs.map(c => `<tr><td>${esc(c.it.name)}${c.it.soldOut ? ' <span class="bad">품절</span>' : ""}<br><span class="small">${won(c.it.price)} × ${c.kg}kg</span></td>
+          <td style="white-space:nowrap"><button class="sec" onclick="app.cartAdd('${c.id}', -1)">−</button> ${c.kg}kg <button class="sec" onclick="app.cartAdd('${c.id}', 1)">＋</button></td>
+          <td style="white-space:nowrap"><a href="${esc(c.it.url)}" target="_blank" rel="noopener">주문</a> · <a href="#" onclick="app.cartBought('${c.id}'); return false">구매 완료</a></td></tr>`).join("")}</table></div>`;
+    }).join("");
+    box.hidden = false;
+    box.innerHTML = `<h2>구매 계획</h2><div class="small">지금 남은 생두 ${remain.toLocaleString("ko-KR")}g + 담은 ${kgAll}kg = 연속 로스팅(${this.day.w || 290}g × 8배치) 약 ${((remain + kgAll * 1000) / per).toFixed(1)}회분. 생두는 1년 안에 쓰는 것이 품질에 유리합니다(지식 베이스 5.2).</div>${sites}
+      <p class="small">「주문」은 판매처 상품 페이지를 엽니다(결제는 그 사이트에서). 받은 뒤 「구매 완료」를 누르면 이 정보로 내 생두에 바로 등록됩니다.</p>`;
+  },
+  // 구매 완료 → 내 생두 등록(목록의 정보 그대로, 프로파일·목표 배전도 자동)
+  async cartBought(id){
+    const c = this.cart.find(x => x.id === id), i = c && this.market.items.find(x => x.id === id); if(!i) return;
+    if(!(await this.ask(`${i.name} ${c.kg}kg를 내 생두로 등록할까요?`))) return;
+    const idText = (i.name + " " + i.variety).toLowerCase();
+    const kind = /게이샤|게샤|geisha|gesha/.test(idText) ? "gesha" : /예멘|yemen/.test(idText) ? "yemen" : /엑셀사|excelsa/.test(idText) ? "excelsa" : /로부스타|robusta|cxr/.test(idText) ? "robusta" : "";
+    const process = ["워시드", "내추럴", "허니", "무산소"].includes(i.processKey) ? i.processKey : "워시드";
+    const profileId = this.pick(kind, "filter", process), p = PROFILES.find(x => x.id === profileId), mid = (p.loss[0] + p.loss[1]) / 2;
+    const d = this.today(), sr = this.sellerRoastOf(i.roast);
+    const slug = (i.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "bean");
+    const bid = d.slice(0, 7) + "-" + slug + "-" + Date.now().toString(36).slice(-4);
+    const notes = [i.densityGL ? `판매처 밀도 ${i.densityGL} g/L (측정 방식이 지식 베이스의 간이 밀도(g/ml)와 달라 로스팅 보정에는 쓰지 않음)` : "", i.scoreSum ? `판매처 컵 점수 ${Object.entries(i.scores).map(([k, v]) => k + " " + v).join(", ")}` : "", `구매 링크: ${i.url}`].filter(Boolean).join("\n");
+    this.beans[bid] = {id: bid, name: i.name, status: "active", origin: {country: i.country, region: i.region, farm: i.farm, altitude: i.alt ? Math.round((i.alt[0] + i.alt[1]) / 2) : null, altitudeRange: i.alt},
+      variety: i.variety, process, grade: i.grade, harvestYear: i.harvest, crop: this.cropOf(i.harvest), cupNotes: i.cup, supplier: this.market.sources[i.site].name,
+      purchasedAt: d, arrivedAt: i.arrived ? i.arrived.replace(/^(\d{2})\.(\d{2})\.(\d{2})$/, "20$1-$2-$3") : null, purchasedG: c.kg * 1000, pricePerKg: i.price,
+      density: null, moisture: i.moisture || null, expensive: !!kind && kind !== "robusta" && kind !== "excelsa" || i.country === "파나마", profileId, sellerRoast: sr, targetLevel: this.sellerDefault(sr) || levelOf(mid).key,
+      adjustments: [], batchPlan: [], notes, batches: []};
+    this.saveBeans(); this.cart = this.cart.filter(x => x !== c); this.cartSave(); this.buyRender(true); this.renderBeans();
+    this.notify(`등록했습니다. 「내 생두」에서 가이드를 확인하세요.${this.beans[bid].expensive ? " 게이샤·예멘·파나마라 고가 생두로 표시했습니다(지식 베이스 8장 스페셜 이벤트용)." : ""}`);
+  },
+
   /* ---------- 오늘 로스팅: 연속 배치 한 페이지 가이드 + 탭 한 번 진행 ---------- */
   day: null, run: null, runTimer: null, wakeLock: null, ac: null,
   dayLoad(){
@@ -1254,7 +1409,7 @@ const app = {
     $("ocr-status").innerHTML = got.found.length
       ? `<b>${esc(okMsg)}</b> 아래 「생두 직접 등록」 폼에 채웠습니다. 읽은 항목: ${esc(got.found.join(", "))}. 못 읽은 항목: ${esc(got.missing.join(", ") || "없음")}. 값이 맞는지 확인하고, 구입량(kg)을 입력한 뒤 등록하세요.`
         + (got.missing.length && this.ocrTexts[0].length ? " 못 읽은 항목이 보이는 화면을 더 캡처해 고르면 이어서 합칩니다." : "")
-        + (r.price ? `<br>가격 ${r.price.toLocaleString("ko-KR")}원을 kg당 가격으로 넣었습니다(두 판매처 모두 기본가가 1kg 기준). 할인·대용량 옵션이면 고쳐 주세요.`
+        + (r.price ? `<br>가격 ${r.price.toLocaleString("ko-KR")}원을 kg당 가격으로 넣었습니다(세웅지씨·GSC 기본가와 커피리브레 소분가는 1kg 기준). 할인·대용량 옵션이면 고쳐 주세요.`
           : r.prices.length || r.kgs.length ? `<br>페이지에서 본 가격·용량 후보: ${esc([...r.prices.map(p => p + "원"), ...r.kgs.map(x => x + "kg")].join(", "))} (어느 것이 구입 옵션인지 직접 확인해 입력하세요)` : "")
       : failMsg;
   },
@@ -1371,7 +1526,12 @@ const app = {
     const idText = (out.name + " " + out.variety).toLowerCase();
     out.kind = /게이샤|게샤|geisha|gesha/.test(idText) ? "gesha" : /예멘|yemen/.test(idText) ? "yemen" : /엑셀사|excelsa/.test(idText) ? "excelsa" : /로부스타|robusta|cxr/.test(idText) ? "robusta" : "";
     const both = A.join("\n") + "\n" + B.join("\n");
-    out.supplier = /커피\s*리브레|coffee\s*libre/i.test(both) ? "커피리브레" : /세웅|sewoong|SW\.ONLY/i.test(both) ? "세웅지씨" : "";
+    out.supplier = /커피\s*리브레|coffee\s*libre/i.test(both) ? "커피리브레" : /세웅|sewoong|SW\.ONLY/i.test(both) ? "세웅지씨" : /GSC|지에스씨/i.test(both) ? "GSC" : "";
+    // 커피리브레 일반 상품 페이지의 가격은 포대(Bulk) kg당 단가다. 1kg 소분 상품이 아니면 kg당 가격으로 넣지 않는다.
+    if(out.supplier === "커피리브레" && out.price && !/1\s*kg\s*소분/i.test(both)){
+      out.extra.push(`커피리브레 상품 페이지 가격 ${out.price.toLocaleString("ko-KR")}원은 포대 단위(Bulk) kg당 가격입니다. 1kg로 샀다면 소분가를 kg당 가격에 넣으세요(「생두 구매」 탭에 1kg 가격이 있습니다).`);
+      out.price = null;
+    }
     out.prices = [...new Set([...both.matchAll(/([0-9][0-9,]{3,})\s*원/g)].map(m => m[1]))].slice(0, 4);
     out.kgs = [...new Set([...both.matchAll(/(\d+(?:\.\d+)?)\s*kg/gi)].map(m => m[1]))].slice(0, 4);
     return out;
