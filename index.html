@@ -228,6 +228,8 @@ ul{margin:6px 0;padding-left:20px}
       <div><label>등급</label><select id="bf-tier" onchange="app.buyRender()"><option value="">전체</option><option>커머셜</option><option>하이커머셜</option><option>스페셜티</option><option>마이크로랏</option></select></div>
       <div><label>품종·트렌드</label><select id="bf-var" onchange="app.buyRender()"></select></div>
       <div><label>생산·입고 연도</label><select id="bf-year" onchange="app.buyRender()"></select></div>
+      <div><label>디카페인</label><select id="bf-decaf" onchange="app.buyRender()"><option value="">전체</option><option value="only">디카페인만 비교</option><option value="no">디카페인 빼기</option></select></div>
+      <div><label>디카페인 공정</label><select id="bf-dmethod" onchange="app.buyRender()"><option value="">전체</option><option>스위스 워터</option><option>마운틴 워터</option><option>슈가케인(EA)</option><option>CO2</option><option>기타</option></select></div>
       <div><label>추천 배전도</label><select id="bf-level" onchange="app.buyRender()"></select></div>
       <div><label>1kg 최대 가격 (원)</label><input id="bf-max" type="number" inputmode="numeric" placeholder="예: 30000" oninput="app.buyRender()"></div>
       <div><label>정렬</label><select id="bf-sort" onchange="app.buyRender()"><option value="value">가성비 높은 순</option><option value="low">가격 낮은 순</option><option value="high">가격 높은 순</option><option value="new">신규 입고 먼저</option><option value="year">최근 연도 먼저</option><option value="score">컵 점수 높은 순</option></select></div>
@@ -250,8 +252,10 @@ ul{margin:6px 0;padding-left:20px}
       <label style="margin:0"><input type="checkbox" id="bf-new" style="width:auto" onchange="app.buyRender()"> 신규 입고만</label>
       <label style="margin:0"><input type="checkbox" id="bf-practice" style="width:auto" onchange="app.buyRender()"> 연습용 가격대</label>
       <button class="sec" onclick="app.buyReset()">조건 초기화</button>
+      <button class="sec" onclick="app.buyReset(); $('bf-decaf').value = 'only'; $('bf-sort').value = 'low'; app.buyRender()">디카페인만 비교</button>
     </div>
   </div>
+  <div id="buy-decaf"></div>
   <div id="buy-list"></div>
 </section>
 
@@ -936,10 +940,12 @@ const app = {
     const items = this.market.items;
     const med = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
     const gesha = i => i.varietyTags.includes("게이샤") || /게이샤|게샤|geisha|gesha/i.test(i.name + " " + i.variety);
-    items.forEach(it => { it.gesha = gesha(it); });
+    items.forEach(it => { it.gesha = gesha(it); this.decafOf(it); });
     items.forEach(it => {
       it.levels = this.sellerLevels(this.sellerRoastOf(it.roast));
-      const g = items.filter(o => o.country && o.country === it.country && o.processKey === it.processKey && o.gesha === it.gesha && (!it.tier || !o.tier || o.tier === it.tier));
+      // 디카페인은 카페인 제거 공정 비용이 붙어 일반 생두와 따로 묶고, 가공(워시드·내추럴) 대신 디카페인끼리 비교한다
+      const g = it.decaf ? items.filter(o => o.decaf && o.country === it.country)
+        : items.filter(o => !o.decaf && o.country && o.country === it.country && o.processKey === it.processKey && o.gesha === it.gesha && (!it.tier || !o.tier || o.tier === it.tier));
       it.group = g.length; it.median = g.length >= 3 ? med(g.map(o => o.price)) : null;
       it.value = it.median ? Math.round(it.median / it.price * 100) : null;
       it.practice = it.processKey === "워시드" && it.price >= 18000 && it.price <= 25000;
@@ -962,13 +968,31 @@ const app = {
     $("bf-level").innerHTML = '<option value="">전체</option>' + LEVELS.map(l => `<option value="${l.key}">${l.name}</option>`).join("");
   },
   SCORE_KEYS: ["향미", "산미", "단맛", "바디감", "밸런스"], flavorSel: [], flavorCount: {},
+  // 디카페인 판별: 상품명·가공 표기(디카페인, 디카프, Decaf, Swiss Water, Mountain Water/MW, Sugarcane/EA)와 세웅지씨 생두찾기 「디카페인」 분류
+  decafOf(it){
+    const t = `${it.name} ${it.process}`, sw = ((it.swTags || {})["가공방식"] || []).includes("디카페인");
+    it.decaf = sw || /디카페인|디카프|decaf|swiss\s*water|스위스\s*워터|마운틴\s*워터|mountain\s*water|^\s*MW\s*$/i.test(t) || /^MW$/i.test((it.process || "").trim());
+    it.decafMethod = !it.decaf ? "" : /스위스|swiss|SW\s*decaf/i.test(t) ? "스위스 워터" : /마운틴|mountain|MW/i.test(t) ? "마운틴 워터"
+      : /슈가|sugar|EA|에틸|ethyl/i.test(t) ? "슈가케인(EA)" : /CO2|co₂|이산화탄소/i.test(t) ? "CO2" : "기타";
+  },
+  // 디카페인만 볼 때: 공정별·판매처별 1kg 가격 비교 표
+  decafSummary(list){
+    const m = this.market, won = n => Math.round(n).toLocaleString("ko-KR") + "원", med = a => { const s = [...a].sort((x, y) => x - y), k = s.length >> 1; return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2; };
+    if(!list.length) return "";
+    const row = (label, a) => { const lo = a.reduce((x, y) => y.price < x.price ? y : x); return `<tr><td>${esc(label)}</td><td>${a.length}개</td><td>${won(lo.price)}~${won(Math.max(...a.map(i => i.price)))}<br><span class="small">중앙값 ${won(med(a.map(i => i.price)))}</span></td><td class="small">${esc(lo.name)}<br>${esc(m.sources[lo.site].name)}</td></tr>`; };
+    const by = (key, names) => names.map(n => [n, list.filter(i => i[key] === n)]).filter(([, a]) => a.length);
+    return `<div class="card"><h2>디카페인 비교 (1kg)</h2>
+      <table><tr><th>공정</th><th>수</th><th>가격</th><th>가장 싼 생두</th></tr>${by("decafMethod", ["스위스 워터", "마운틴 워터", "슈가케인(EA)", "CO2", "기타"]).map(([n, a]) => row(n, a)).join("")}</table>
+      <table style="margin-top:8px"><tr><th>판매처</th><th>수</th><th>가격</th><th>가장 싼 생두</th></tr>${by("site", Object.keys(m.sources)).map(([k, a]) => row(m.sources[k].name, a)).join("")}</table>
+      <p class="small">아래 목록의 가성비는 같은 나라 디카페인끼리 비교한 값입니다. 디카페인 공정과 로스팅에 대한 기준은 지식 베이스에 없습니다.</p></div>`;
+  },
   // 향미 칩: 생두 수가 많은 순, 누르면 켜고 끔
   buyFlavorChips(){
     const keys = Object.keys(this.flavorCount).sort((a, b) => this.flavorCount[b] - this.flavorCount[a]);
     $("bf-flavors").innerHTML = keys.map(k => `<button class="${this.flavorSel.includes(k) ? "on" : ""}" onclick="app.buyFlavor('${k.replace(/'/g, "")}')">${esc(k)} (${this.flavorCount[k]})</button>`).join("");
   },
   buyFlavor(k){ this.flavorSel = this.flavorSel.includes(k) ? this.flavorSel.filter(x => x !== k) : [...this.flavorSel, k]; this.buyFlavorChips(); this.buyRender(); },
-  buyReset(){ ["bf-q", "bf-site", "bf-country", "bf-proc", "bf-tier", "bf-var", "bf-year", "bf-level", "bf-max"].forEach(id => { $(id).value = ""; });
+  buyReset(){ ["bf-q", "bf-site", "bf-country", "bf-proc", "bf-tier", "bf-var", "bf-year", "bf-decaf", "bf-dmethod", "bf-level", "bf-max"].forEach(id => { $(id).value = ""; }); $("bf-sort").value = "value";
     document.querySelectorAll(".bf-score").forEach(x => { x.value = ""; }); this.flavorSel = []; this.buyFlavorChips(); $("bf-new").checked = $("bf-practice").checked = false; $("bf-stock").checked = true; this.buyRender(); },
   buyList(){
     const v = id => $(id).value, q = v("bf-q").trim().toLowerCase(), max = parseFloat(v("bf-max"));
@@ -979,9 +1003,10 @@ const app = {
     $("bf-flavor-sum").textContent = fsel.length ? `· ${fsel.join(", ")} (${any ? "하나라도" : "모두"})` : "";
     $("bf-score-sum").textContent = mins.length ? "· " + mins.map(([k, m]) => `${k} ${m}↑`).join(", ") : "";
     let a = this.market.items.filter(i => (!v("bf-site") || i.site === v("bf-site")) && (!v("bf-country") || i.country === v("bf-country"))
-      && (!v("bf-proc") || i.processKey === v("bf-proc")) && (!v("bf-tier") || i.tier === v("bf-tier"))
+      && (!v("bf-proc") || (v("bf-proc") === "디카페인" ? i.decaf : i.processKey === v("bf-proc"))) && (!v("bf-tier") || i.tier === v("bf-tier"))
       && (!v("bf-var") || i.varietyTags.includes(v("bf-var"))) && fl(i) && sc(i)
       && (!v("bf-year") || (v("bf-year") === "none" ? !i.year : i.year === +v("bf-year")))
+      && (v("bf-decaf") !== "only" || i.decaf) && (v("bf-decaf") !== "no" || !i.decaf) && (!v("bf-dmethod") || i.decafMethod === v("bf-dmethod"))
       && (!v("bf-level") || i.levels.includes(v("bf-level"))) && (!(max > 0) || i.price <= max)
       && (!$("bf-stock").checked || !i.soldOut) && (!$("bf-new").checked || i.isNew) && (!$("bf-practice").checked || i.practice)
       && (!q || [i.name, i.farm, i.region, i.variety, i.cup].join(" ").toLowerCase().includes(q)));
@@ -1001,6 +1026,7 @@ const app = {
       <p class="small">세일·품절은 수시로 바뀌니 결제 전에 판매처에서 확인하세요. 결제는 각 사이트에서 합니다. 목록이 오래됐으면 Claude에게 「생두 시세 갱신해 줘」라고 하면 다시 모읍니다.</p>
       <details class="small"><summary style="cursor:pointer">가성비 지수란?</summary><p>같은 국가·같은 가공·게이샤 여부(둘 다 등급이 있으면 같은 등급)인 생두들의 1kg 가격 중앙값 ÷ 이 생두의 1kg 가격 × 100입니다. 100보다 크면 같은 조건 가운데 싼 편입니다. 비교 대상이 3개 미만이면 표시하지 않습니다. 이 앱이 정한 계산식이고 맛 품질을 뜻하지 않습니다. 「연습용 가격대」는 지식 베이스 8장의 「kg당 1.8~2.5만 원대 워시드」입니다.</p></details>`;
     const list = this.buyList(); if(!more) this.buyShown = 40;
+    $("buy-decaf").innerHTML = $("bf-decaf").value === "only" || $("bf-dmethod").value || $("bf-proc").value === "디카페인" ? this.decafSummary(list) : "";
     $("buy-list").innerHTML = `<div class="small" style="margin:0 2px 6px">${list.length}개</div>` + list.slice(0, this.buyShown).map(i => this.buyCard(i)).join("")
       + (list.length > this.buyShown ? `<button class="sec" style="width:100%" onclick="app.buyShown += 40; app.buyRender(true)">더 보기 (${list.length - this.buyShown}개 남음)</button>` : "");
     this.cartRender();
@@ -1013,7 +1039,7 @@ const app = {
     const facts = [i.country, i.region, i.farm].filter(Boolean).join(" / ");
     const meta = [i.variety, i.process, i.grade, i.tier && i.tier !== i.grade ? i.tier : "", i.alt ? (i.alt[0] === i.alt[1] ? i.alt[0] : i.alt.join("~")) + "m" : "", i.year ? `${i.year}년 ${i.yearKind}` : ""].filter(Boolean).join(" · ");
     return `<div class="card"${i.soldOut ? ' style="opacity:.55"' : ""}><div class="row" style="justify-content:space-between;align-items:start">
-        <div style="flex:1;min-width:0"><span class="tag">${esc(src.name)}</span>${i.isNew ? ' <span class="tag ok">신규</span>' : ""}${i.sale ? ' <span class="tag warn">세일</span>' : ""}${i.soldOut ? ' <span class="tag bad">품절</span>' : ""}
+        <div style="flex:1;min-width:0"><span class="tag">${esc(src.name)}</span>${i.decaf ? ` <span class="tag">디카페인 · ${esc(i.decafMethod)}</span>` : ""}${i.isNew ? ' <span class="tag ok">신규</span>' : ""}${i.sale ? ' <span class="tag warn">세일</span>' : ""}${i.soldOut ? ' <span class="tag bad">품절</span>' : ""}
           <div style="font-weight:600;margin-top:4px">${esc(i.name)}</div></div>
         <div style="text-align:right"><b style="font-size:18px">${won(i.price)}</b><div class="small">${i.unit === "1kg" ? "1kg" : esc(i.unit) + " 단위의 kg당"}</div></div></div>
       ${facts ? `<div class="small">${esc(facts)}</div>` : ""}${meta ? `<div class="small">${esc(meta)}</div>` : ""}
